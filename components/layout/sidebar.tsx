@@ -16,6 +16,7 @@ import {
   LineChart,
   Lock,
   Settings,
+  MapPin,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -33,6 +34,10 @@ const navItems = [
   { label: "Safety & Security", href: "/dashboard/safety", icon: ShieldCheck },
   { label: "Analytics", href: "/dashboard/analytics", icon: LineChart },
   { label: "Roles & Permissions", href: "/dashboard/roles", icon: Lock },
+
+  // ✅ ✅ ✅ NEW ZONES LINK
+  { label: "Zones", href: "/dashboard/zones", icon: MapPin },
+
   { label: "System Settings", href: "/dashboard/settings", icon: Settings },
 ];
 
@@ -52,10 +57,12 @@ export function Sidebar({ isOpen }: { isOpen: boolean }) {
           <p className="text-xs text-muted-foreground">Control center</p>
         </div>
       </div>
+
       <nav className="flex h-[calc(100%-4rem)] flex-col gap-1 overflow-y-auto px-4 py-6">
         {navItems.map((item) => {
           const active = pathname === item.href;
           const Icon = item.icon;
+
           return (
             <Link
               key={item.href}

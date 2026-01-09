@@ -1,13 +1,16 @@
-import api, { getAuthHeader } from "@/lib/api/axios";
+import api from "@/lib/api/axios";
 
 export async function fetchSafetyIncidents() {
-  return api.get("/api/admin/safety", {
-    headers: getAuthHeader(),
-  });
+  const res = await api.get("/api/admin/safety/incidents");
+  return res.data;
 }
 
-export async function updateSafetyPolicy(payload: Record<string, unknown>) {
-  return api.post("/api/admin/safety/policy", payload, {
-    headers: getAuthHeader(),
-  });
+export async function resolveIncident(id: string) {
+  const res = await api.patch(`/api/admin/safety/incidents/${id}/resolve`);
+  return res.data;
+}
+
+export async function addIncidentNote(id: string, note: string) {
+  const res = await api.patch(`/api/admin/safety/incidents/${id}/note`, { note });
+  return res.data;
 }

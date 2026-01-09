@@ -11,10 +11,12 @@ import { useAuthStore } from "@/lib/store/auth";
 
 export default function LoginPage() {
   const router = useRouter();
-  const setToken = useAuthStore((state) => state.setToken);
+  const setAuth = useAuthStore((state) => state.setAuth);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
+
   const [step, setStep] = useState<"login" | "otp">("login");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,11 +25,15 @@ export default function LoginPage() {
     event.preventDefault();
     setLoading(true);
     setError(null);
+
     try {
       await login({ email, password });
       setStep("otp");
-    } catch (err) {
-      setError("Login failed. Please check credentials or try again.");
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message ||
+        "Login failed. Please check credentials or try again.";
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -37,17 +43,25 @@ export default function LoginPage() {
     event.preventDefault();
     setLoading(true);
     setError(null);
+
     try {
-      const response = await verifyOtp({ email, otp });
-      const token =
-        response.data?.token ||
-        response.data?.data?.token ||
-        response.data?.accessToken ||
-        "towmech-admin-token";
-      setToken(token);
+      const data = await verifyOtp({ email, otp });
+
+      const token = data?.token;
+      const user = data?.user;
+
+      if (!token || !user) {
+        throw new Error("Invalid auth response from server.");
+      }
+
+      setAuth(token, user);
       router.push("/dashboard");
-    } catch (err) {
-      setError("OTP verification failed. Please try again.");
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message ||
+        err?.message ||
+        "OTP verification failed. Please try again.";
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -64,6 +78,7 @@ export default function LoginPage() {
             Secure access to the TowMech operations dashboard.
           </p>
         </CardHeader>
+
         <CardContent>
           {step === "login" ? (
             <form className="space-y-4" onSubmit={handleLogin}>
@@ -77,6 +92,7 @@ export default function LoginPage() {
                   required
                 />
               </div>
+
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-700">
                   Password
@@ -89,7 +105,9 @@ export default function LoginPage() {
                   required
                 />
               </div>
+
               {error && <p className="text-sm text-red-600">{error}</p>}
+
               <Button className="w-full" disabled={loading} type="submit">
                 {loading ? "Signing in..." : "Sign in"}
               </Button>
@@ -99,6 +117,7 @@ export default function LoginPage() {
               <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">
                 Enter the OTP sent to <span className="font-medium">{email}</span>.
               </div>
+
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-700">OTP</label>
                 <Input
@@ -109,9 +128,23 @@ export default function LoginPage() {
                   required
                 />
               </div>
+
               {error && <p className="text-sm text-red-600">{error}</p>}
+
               <Button className="w-full" disabled={loading} type="submit">
                 {loading ? "Verifying..." : "Verify & Continue"}
+              </Button>
+
+              <Button
+                className="w-full"
+                variant="outline"
+                type="button"
+                onClick={() => {
+                  setOtp("");
+                  setStep("login");
+                }}
+              >
+                Back
               </Button>
             </form>
           )}

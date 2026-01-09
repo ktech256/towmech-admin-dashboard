@@ -1,13 +1,13 @@
 import api, { getAuthHeader } from "@/lib/api/axios";
 
-export async function fetchPricing() {
-  return api.get("/api/admin/pricing", {
-    headers: getAuthHeader(),
-  });
+export async function fetchPricingConfig() {
+  const res = await api.get("/api/pricing-config");
+  return res.data;
 }
 
-export async function updatePricing(payload: Record<string, unknown>) {
-  return api.post("/api/admin/pricing", payload, {
+export async function updatePricingConfig(payload: any) {
+  const res = await api.patch("/api/pricing-config", payload, {
     headers: getAuthHeader(),
   });
+  return res.data;
 }

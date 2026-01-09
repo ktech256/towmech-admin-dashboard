@@ -1,4 +1,4 @@
-import api, { getAuthHeader } from "@/lib/api/axios";
+import api from "@/lib/api/axios";
 
 export type LoginPayload = {
   email: string;
@@ -11,15 +11,16 @@ export type VerifyOtpPayload = {
 };
 
 export async function login(payload: LoginPayload) {
-  return api.post("/api/auth/login", payload);
+  const res = await api.post("/api/auth/login", payload);
+  return res.data;
 }
 
 export async function verifyOtp(payload: VerifyOtpPayload) {
-  return api.post("/api/auth/verify-otp", payload);
+  const res = await api.post("/api/auth/verify-otp", payload);
+  return res.data; // should contain token + user
 }
 
 export async function getProfile() {
-  return api.get("/api/admin/profile", {
-    headers: getAuthHeader(),
-  });
+  const res = await api.get("/api/auth/profile");
+  return res.data;
 }

@@ -1,13 +1,11 @@
-import api, { getAuthHeader } from "@/lib/api/axios";
+import api from "@/lib/api/axios";
 
 export async function fetchUsers() {
-  return api.get("/api/admin/users", {
-    headers: getAuthHeader(),
-  });
+  const res = await api.get("/api/admin/users");
+  return res.data;
 }
 
 export async function fetchUserById(id: string) {
-  return api.get(`/api/admin/users/${id}`, {
-    headers: getAuthHeader(),
-  });
+  const res = await api.get(`/api/admin/users/${id}`);
+  return res.data;
 }
