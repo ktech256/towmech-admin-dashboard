@@ -5,7 +5,14 @@ import { useEffect, useMemo, useState } from "react";
 import { ModuleHeader } from "@/components/dashboard/module-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 
 import { fetchUsers } from "@/lib/api/users";
@@ -37,11 +44,7 @@ export default function UsersPage() {
         const data = await fetchUsers();
 
         // backend might return { users: [] } OR { data: [] } OR direct []
-        const list =
-          data?.users ||
-          data?.data ||
-          data ||
-          [];
+        const list = data?.users || data?.data || data || [];
 
         setUsers(list);
       } catch (err: any) {
@@ -157,7 +160,10 @@ export default function UsersPage() {
                 <TableBody>
                   {filteredUsers.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center py-8 text-sm text-muted-foreground">
+                      <TableCell
+                        colSpan={5}
+                        className="text-center py-8 text-sm text-muted-foreground"
+                      >
                         No users found.
                       </TableCell>
                     </TableRow>
@@ -169,6 +175,7 @@ export default function UsersPage() {
                         </TableCell>
                         <TableCell>{u.email || "—"}</TableCell>
                         <TableCell>{u.phone || "—"}</TableCell>
+
                         <TableCell>
                           <div className="flex gap-2">
                             {u.isVerified ? (
@@ -177,11 +184,15 @@ export default function UsersPage() {
                               <Badge variant="secondary">Unverified</Badge>
                             )}
 
+                            {/* ✅ FIXED: No destructive variant exists */}
                             {u.isBlocked && (
-                              <Badge variant="destructive">Blocked</Badge>
+                              <Badge className="bg-red-600 text-white">
+                                Blocked
+                              </Badge>
                             )}
                           </div>
                         </TableCell>
+
                         <TableCell>
                           {u.createdAt
                             ? new Date(u.createdAt).toLocaleDateString()
