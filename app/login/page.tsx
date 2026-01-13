@@ -1,11 +1,65 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { loginWithPhonePassword, verifyOtp } from "@/lib/api/auth";
+
+/**
+ * Resolve API base URL safely for prod (Render) + dev (localhost)
+ * Priority:
+ * 1) NEXT_PUBLIC_API_URL
+ * 2) NEXT_PUBLIC_API_URL
+ * 3) If running on Render domain → force Render backend
+ * 4) Dev fallback → localhost backend
+ */
+function resolveApiBase() {
+  const env1 = process.env.NEXT_PUBLIC_API_URL;
+  const env2 = process.env.NEXT_PUBLIC_API_URL;
+  const fromEnv = (env1 || env2 || "").trim().replace(/\/+$/, "");
+
+  if (fromEnv) return fromEnv;
+
+  // If deployed on Render dashboard, force the backend domain (prevents localhost mistakes)
+  if (typeof window !== "undefined") {
+    const host = window.location.host || "";
+    if (host.includes("onrender.com")) {
+      return "https://towmech-main.onrender.com";
+    }
+  }
+
+  // Local dev fallback
+  return "http://localhost:5000";
+}
+
+async function postJson(url: string, body: any) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    // IMPORTANT: do NOT set credentials unless you use cookies
+  });
+
+  const text = await res.text();
+  let data: any = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = { message: text || "Non-JSON response" };
+  }
+
+  if (!res.ok) {
+    const msg = data?.message || `Request failed (${res.status})`;
+    throw new Error(msg);
+  }
+
+  return data;
+}
 
 export default function LoginPage() {
   const router = useRouter();
+
+  const apiBase = useMemo(() => resolveApiBase(), []);
+  const loginUrl = `${apiBase}/api/auth/login`;
+  const verifyOtpUrl = `${apiBase}/api/auth/verify-otp`;
 
   const [step, setStep] = useState<"LOGIN" | "OTP">("LOGIN");
 
@@ -21,9 +75,9 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const data = await loginWithPhonePassword({ phone, password });
+      const data = await postJson(loginUrl, { phone, password });
 
-      // ✅ CASE 1: Admin/SuperAdmin returns token immediately
+      // ✅ CASE 1: Admin bypass returns token immediately
       if (data?.token) {
         localStorage.setItem("adminToken", data.token);
         localStorage.setItem("token", data.token); // optional compatibility
@@ -31,7 +85,7 @@ export default function LoginPage() {
         return;
       }
 
-      // ✅ CASE 2: OTP flow (customers/providers)
+      // ✅ CASE 2: OTP required (customers/providers)
       const requiresOtp =
         data?.requiresOtp === true ||
         String(data?.message || "").toLowerCase().includes("otp");
@@ -41,10 +95,10 @@ export default function LoginPage() {
         return;
       }
 
-      // ❌ unexpected response
+      // Anything else:
       setError(data?.message || "Unexpected response from server.");
     } catch (err: any) {
-      setError(err?.response?.data?.message || "Login failed");
+      setError(err?.message || "Login failed");
     } finally {
       setLoading(false);
     }
@@ -55,7 +109,7 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const data = await verifyOtp({ phone, otp });
+      const data = await postJson(verifyOtpUrl, { phone, otp });
 
       const token = data?.token;
       if (!token) {
@@ -65,10 +119,9 @@ export default function LoginPage() {
 
       localStorage.setItem("adminToken", token);
       localStorage.setItem("token", token); // optional compatibility
-
       router.push("/dashboard");
     } catch (err: any) {
-      setError(err?.response?.data?.message || "OTP verification failed");
+      setError(err?.message || "OTP verification failed");
     } finally {
       setLoading(false);
     }
@@ -77,6 +130,13 @@ export default function LoginPage() {
   return (
     <div style={{ maxWidth: 420, margin: "50px auto" }}>
       <h2>TowMech Admin Login</h2>
+
+      {/* ✅ Debug line so we can SEE what URL the deployed app is using */}
+      <p style={{ fontSize: 12, color: "#666" }}>
+        API Base: <code>{apiBase}</code>
+        <br />
+        Login URL: <code>{loginUrl}</code>
+      </p>
 
       {step === "LOGIN" && (
         <>
@@ -116,13 +176,28 @@ export default function LoginPage() {
             onChange={(e) => setOtp(e.target.value)}
             style={{ width: "100%", padding: 10, marginBottom: 10 }}
             placeholder="Enter OTP"
+            inputMode="numeric"
           />
 
           {error && <p style={{ color: "red" }}>{error}</p>}
 
-          <button onClick={handleVerifyOtp} disabled={loading} style={{ padding: 10 }}>
-            {loading ? "..." : "Verify OTP"}
-          </button>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={handleVerifyOtp} disabled={loading} style={{ padding: 10 }}>
+              {loading ? "..." : "Verify OTP"}
+            </button>
+
+            <button
+              onClick={() => {
+                setOtp("");
+                setStep("LOGIN");
+                setError("");
+              }}
+              disabled={loading}
+              style={{ padding: 10 }}
+            >
+              Back
+            </button>
+          </div>
         </>
       )}
     </div>
