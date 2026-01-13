@@ -11,6 +11,7 @@ import {
   BadgeDollarSign,
   CreditCard,
   LifeBuoy,
+  Star, // ✅ added
   Bell,
   ShieldCheck,
   LineChart,
@@ -30,12 +31,16 @@ const navItems = [
   { label: "Pricing & Commission", href: "/dashboard/pricing", icon: BadgeDollarSign },
   { label: "Payments & Finance", href: "/dashboard/payments", icon: CreditCard },
   { label: "Support & Disputes", href: "/dashboard/support", icon: LifeBuoy },
+
+  // ✅ Ratings link
+  { label: "Ratings", href: "/dashboard/support/ratings", icon: Star },
+
   { label: "Notifications", href: "/dashboard/notifications", icon: Bell },
   { label: "Safety & Security", href: "/dashboard/safety", icon: ShieldCheck },
   { label: "Analytics", href: "/dashboard/analytics", icon: LineChart },
   { label: "Roles & Permissions", href: "/dashboard/roles", icon: Lock },
 
-  // ✅ ✅ ✅ NEW ZONES LINK
+  // ✅ Zones
   { label: "Zones", href: "/dashboard/zones", icon: MapPin },
 
   { label: "System Settings", href: "/dashboard/settings", icon: Settings },

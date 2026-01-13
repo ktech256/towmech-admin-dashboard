@@ -2,154 +2,115 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { login, verifyOtp } from "@/lib/api/auth";
-import { useAuthStore } from "@/lib/store/auth";
+import { loginWithPhonePassword, verifyOtp } from "@/lib/api/auth";
 
 export default function LoginPage() {
   const router = useRouter();
-  const setAuth = useAuthStore((state) => state.setAuth);
 
-  const [email, setEmail] = useState("");
+  const [step, setStep] = useState<"LOGIN" | "OTP">("LOGIN");
+
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
 
-  const [step, setStep] = useState<"login" | "otp">("login");
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const handleLogin = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const handleLogin = async () => {
+    setError("");
     setLoading(true);
-    setError(null);
 
     try {
-      await login({ email, password });
-      setStep("otp");
+      const data = await loginWithPhonePassword({ phone, password });
+
+      // Backend returns ONLY OTP sent message here
+      if (data?.message?.toLowerCase().includes("otp")) {
+        setStep("OTP");
+        return;
+      }
+
+      setError("Unexpected response from server (OTP not triggered).");
     } catch (err: any) {
-      const msg =
-        err?.response?.data?.message ||
-        "Login failed. Please check credentials or try again.";
-      setError(msg);
+      setError(err?.response?.data?.message || "Login failed");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleVerify = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const handleVerifyOtp = async () => {
+    setError("");
     setLoading(true);
-    setError(null);
 
     try {
-      const data = await verifyOtp({ email, otp });
+      const data = await verifyOtp({ phone, otp });
 
       const token = data?.token;
-      const user = data?.user;
-
-      if (!token || !user) {
-        throw new Error("Invalid auth response from server.");
+      if (!token) {
+        setError("OTP verified but token missing from response.");
+        return;
       }
 
-      setAuth(token, user);
+      // ✅ Save token for your axios interceptor
+      localStorage.setItem("adminToken", token);
+
+      // ✅ redirect
       router.push("/dashboard");
     } catch (err: any) {
-      const msg =
-        err?.response?.data?.message ||
-        err?.message ||
-        "OTP verification failed. Please try again.";
-      setError(msg);
+      setError(err?.response?.data?.message || "OTP verification failed");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
-      <Card className="w-full max-w-md shadow-xl">
-        <CardHeader>
-          <CardTitle className="text-2xl font-semibold text-slate-900">
-            TowMech Admin Login
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Secure access to the TowMech operations dashboard.
-          </p>
-        </CardHeader>
+    <div style={{ maxWidth: 420, margin: "50px auto" }}>
+      <h2>TowMech Admin Login</h2>
 
-        <CardContent>
-          {step === "login" ? (
-            <form className="space-y-4" onSubmit={handleLogin}>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Email</label>
-                <Input
-                  type="email"
-                  placeholder="admin@towmech.com"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  required
-                />
-              </div>
+      {step === "LOGIN" && (
+        <>
+          <label>Phone</label>
+          <input
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            style={{ width: "100%", padding: 10, marginBottom: 10 }}
+            placeholder="071..."
+          />
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">
-                  Password
-                </label>
-                <Input
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  required
-                />
-              </div>
+          <label>Password</label>
+          <input
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            type="password"
+            style={{ width: "100%", padding: 10, marginBottom: 10 }}
+          />
 
-              {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p style={{ color: "red" }}>{error}</p>}
 
-              <Button className="w-full" disabled={loading} type="submit">
-                {loading ? "Signing in..." : "Sign in"}
-              </Button>
-            </form>
-          ) : (
-            <form className="space-y-4" onSubmit={handleVerify}>
-              <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">
-                Enter the OTP sent to <span className="font-medium">{email}</span>.
-              </div>
+          <button onClick={handleLogin} disabled={loading} style={{ padding: 10 }}>
+            {loading ? "..." : "Sign in"}
+          </button>
+        </>
+      )}
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">OTP</label>
-                <Input
-                  type="text"
-                  placeholder="123456"
-                  value={otp}
-                  onChange={(event) => setOtp(event.target.value)}
-                  required
-                />
-              </div>
+      {step === "OTP" && (
+        <>
+          <p>OTP sent to: <strong>{phone}</strong></p>
 
-              {error && <p className="text-sm text-red-600">{error}</p>}
+          <label>OTP</label>
+          <input
+            value={otp}
+            onChange={(e) => setOtp(e.target.value)}
+            style={{ width: "100%", padding: 10, marginBottom: 10 }}
+            placeholder="Enter OTP"
+          />
 
-              <Button className="w-full" disabled={loading} type="submit">
-                {loading ? "Verifying..." : "Verify & Continue"}
-              </Button>
+          {error && <p style={{ color: "red" }}>{error}</p>}
 
-              <Button
-                className="w-full"
-                variant="outline"
-                type="button"
-                onClick={() => {
-                  setOtp("");
-                  setStep("login");
-                }}
-              >
-                Back
-              </Button>
-            </form>
-          )}
-        </CardContent>
-      </Card>
+          <button onClick={handleVerifyOtp} disabled={loading} style={{ padding: 10 }}>
+            {loading ? "..." : "Verify OTP"}
+          </button>
+        </>
+      )}
     </div>
   );
 }
