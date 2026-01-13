@@ -4,12 +4,10 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { loginWithPhonePassword, verifyOtp } from "@/lib/api/auth";
 
-type LoginStep = "LOGIN" | "OTP";
-
 export default function LoginPage() {
   const router = useRouter();
 
-  const [step, setStep] = useState<LoginStep>("LOGIN");
+  const [step, setStep] = useState<"LOGIN" | "OTP">("LOGIN");
 
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
@@ -25,24 +23,26 @@ export default function LoginPage() {
     try {
       const data = await loginWithPhonePassword({ phone, password });
 
-      // ✅ CASE 1: Admin/SuperAdmin bypass OTP → token returned immediately
+      // ✅ CASE 1: Admin/SuperAdmin returns token immediately
       if (data?.token) {
         localStorage.setItem("adminToken", data.token);
+        localStorage.setItem("token", data.token); // optional compatibility
         router.push("/dashboard");
         return;
       }
 
-      // ✅ CASE 2: OTP flow
-      const requiresOtp = data?.requiresOtp === true;
-      const messageHasOtp = String(data?.message || "").toLowerCase().includes("otp");
+      // ✅ CASE 2: OTP flow (customers/providers)
+      const requiresOtp =
+        data?.requiresOtp === true ||
+        String(data?.message || "").toLowerCase().includes("otp");
 
-      if (requiresOtp || messageHasOtp) {
+      if (requiresOtp) {
         setStep("OTP");
         return;
       }
 
-      // ❌ If we get here, backend response shape doesn't match expectations
-      setError("Unexpected response from server. No token and OTP not triggered.");
+      // ❌ unexpected response
+      setError(data?.message || "Unexpected response from server.");
     } catch (err: any) {
       setError(err?.response?.data?.message || "Login failed");
     } finally {
@@ -64,6 +64,8 @@ export default function LoginPage() {
       }
 
       localStorage.setItem("adminToken", token);
+      localStorage.setItem("token", token); // optional compatibility
+
       router.push("/dashboard");
     } catch (err: any) {
       setError(err?.response?.data?.message || "OTP verification failed");
@@ -84,7 +86,6 @@ export default function LoginPage() {
             onChange={(e) => setPhone(e.target.value)}
             style={{ width: "100%", padding: 10, marginBottom: 10 }}
             placeholder="071..."
-            autoComplete="username"
           />
 
           <label>Password</label>
@@ -93,7 +94,6 @@ export default function LoginPage() {
             onChange={(e) => setPassword(e.target.value)}
             type="password"
             style={{ width: "100%", padding: 10, marginBottom: 10 }}
-            autoComplete="current-password"
           />
 
           {error && <p style={{ color: "red" }}>{error}</p>}
@@ -116,28 +116,13 @@ export default function LoginPage() {
             onChange={(e) => setOtp(e.target.value)}
             style={{ width: "100%", padding: 10, marginBottom: 10 }}
             placeholder="Enter OTP"
-            inputMode="numeric"
           />
 
           {error && <p style={{ color: "red" }}>{error}</p>}
 
-          <div style={{ display: "flex", gap: 10 }}>
-            <button onClick={handleVerifyOtp} disabled={loading} style={{ padding: 10 }}>
-              {loading ? "..." : "Verify OTP"}
-            </button>
-
-            <button
-              onClick={() => {
-                setOtp("");
-                setStep("LOGIN");
-                setError("");
-              }}
-              disabled={loading}
-              style={{ padding: 10 }}
-            >
-              Back
-            </button>
-          </div>
+          <button onClick={handleVerifyOtp} disabled={loading} style={{ padding: 10 }}>
+            {loading ? "..." : "Verify OTP"}
+          </button>
         </>
       )}
     </div>
