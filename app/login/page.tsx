@@ -17,11 +17,12 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   const API_BASE =
+    process.env.NEXT_PUBLIC_API_URL ||
     process.env.NEXT_PUBLIC_API_BASE_URL ||
     process.env.NEXT_PUBLIC_API_URL ||
     "http://localhost:5000";
 
-  const loginUrl = `${API_BASE.replace(/\/$/, "")}/auth/login`;
+  const loginUrl = `${API_BASE.replace(/\/$/, "")}/api/auth/login`;
 
   const handleLogin = async () => {
     setError("");
@@ -30,22 +31,17 @@ export default function LoginPage() {
     try {
       const data = await loginWithPhonePassword({ phone, password });
 
-      console.log("LOGIN RESPONSE:", data);
-
-      // ✅ Admin/SuperAdmin returns token immediately
+      // ✅ CASE 1: Admin / SuperAdmin returns token immediately
       if (data?.token) {
         localStorage.setItem("adminToken", data.token);
-        localStorage.setItem("token", data.token); // compatibility (if your interceptor checks this)
+        localStorage.setItem("token", data.token); // compatibility
+        console.log("✅ Saved adminToken:", data.token);
 
-        // ✅ verify it saved
-        console.log("Saved adminToken:", localStorage.getItem("adminToken"));
-
-        // ✅ hard redirect (stronger than router.push when guards/middleware interfere)
-        window.location.href = "/dashboard";
+        router.push("/dashboard");
         return;
       }
 
-      // ✅ OTP flow
+      // ✅ CASE 2: OTP flow for customers/providers
       const requiresOtp =
         data?.requiresOtp === true ||
         String(data?.message || "").toLowerCase().includes("otp");
@@ -70,8 +66,6 @@ export default function LoginPage() {
     try {
       const data = await verifyOtp({ phone, otp });
 
-      console.log("VERIFY OTP RESPONSE:", data);
-
       const token = data?.token;
       if (!token) {
         setError("OTP verified but token missing from response.");
@@ -79,9 +73,9 @@ export default function LoginPage() {
       }
 
       localStorage.setItem("adminToken", token);
-      localStorage.setItem("token", token);
+      localStorage.setItem("token", token); // compatibility
 
-      window.location.href = "/dashboard";
+      router.push("/dashboard");
     } catch (err: any) {
       setError(err?.response?.data?.message || "OTP verification failed");
     } finally {
@@ -93,8 +87,7 @@ export default function LoginPage() {
     <div style={{ maxWidth: 420, margin: "50px auto" }}>
       <h2>TowMech Admin Login</h2>
 
-      {/* Debug */}
-      <p style={{ fontSize: 12, color: "#666" }}>
+      <p style={{ fontSize: 12, opacity: 0.7 }}>
         API Base: {API_BASE}
         <br />
         Login URL: {loginUrl}
@@ -108,6 +101,7 @@ export default function LoginPage() {
             onChange={(e) => setPhone(e.target.value)}
             style={{ width: "100%", padding: 10, marginBottom: 10 }}
             placeholder="071..."
+            autoComplete="username"
           />
 
           <label>Password</label>
@@ -116,6 +110,7 @@ export default function LoginPage() {
             onChange={(e) => setPassword(e.target.value)}
             type="password"
             style={{ width: "100%", padding: 10, marginBottom: 10 }}
+            autoComplete="current-password"
           />
 
           {error && <p style={{ color: "red" }}>{error}</p>}
@@ -138,6 +133,7 @@ export default function LoginPage() {
             onChange={(e) => setOtp(e.target.value)}
             style={{ width: "100%", padding: 10, marginBottom: 10 }}
             placeholder="Enter OTP"
+            inputMode="numeric"
           />
 
           {error && <p style={{ color: "red" }}>{error}</p>}
@@ -146,19 +142,17 @@ export default function LoginPage() {
             {loading ? "..." : "Verify OTP"}
           </button>
 
-          <div style={{ marginTop: 10 }}>
-            <button
-              onClick={() => {
-                setOtp("");
-                setStep("LOGIN");
-                setError("");
-              }}
-              disabled={loading}
-              style={{ padding: 10 }}
-            >
-              Back
-            </button>
-          </div>
+          <button
+            onClick={() => {
+              setOtp("");
+              setStep("LOGIN");
+              setError("");
+            }}
+            disabled={loading}
+            style={{ padding: 10, marginLeft: 10 }}
+          >
+            Back
+          </button>
         </>
       )}
     </div>
