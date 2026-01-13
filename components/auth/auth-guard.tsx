@@ -1,37 +1,62 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
-import { useAuthStore } from "@/lib/store/auth";
+type Props = {
+  children: React.ReactNode;
+};
 
-export function AuthGuard({ children }: { children: React.ReactNode }) {
-  const token = useAuthStore((state) => state.token);
-  const isHydrated = useAuthStore((state) => state.isHydrated);
+/**
+ * AuthGuard
+ * - Accepts token stored in either:
+ *   - localStorage["adminToken"]  (your dashboard)
+ *   - localStorage["token"]       (compat / older builds)
+ * - Only redirects AFTER hydration (prevents false redirects on Render)
+ */
+export function AuthGuard({ children }: Props) {
   const router = useRouter();
   const pathname = usePathname();
 
+  const [ready, setReady] = useState(false);
+  const [allowed, setAllowed] = useState(false);
+
   useEffect(() => {
-    if (!isHydrated) {
-      return;
+    // Ensure this only runs in browser
+    if (typeof window === "undefined") return;
+
+    const adminToken = localStorage.getItem("adminToken");
+    const token = localStorage.getItem("token");
+
+    const t = adminToken || token;
+
+    // If token exists, we allow.
+    // (You can add role checking later if you want)
+    if (t && t.length > 10) {
+      setAllowed(true);
+    } else {
+      setAllowed(false);
+
+      // avoid redirect loop
+      if (pathname !== "/login") {
+        router.replace("/login");
+      }
     }
 
-    if (!token && pathname?.startsWith("/dashboard")) {
-      router.replace("/login");
-    }
-  }, [isHydrated, token, router, pathname]);
+    setReady(true);
+  }, [router, pathname]);
 
-  if (!isHydrated) {
+  // While deciding, show nothing or a loader
+  if (!ready) {
     return (
       <div className="flex h-screen items-center justify-center text-sm text-muted-foreground">
-        Loading dashboard...
+        Checking session...
       </div>
     );
   }
 
-  if (!token && pathname?.startsWith("/dashboard")) {
-    return null;
-  }
+  // If not allowed, we already redirected to /login
+  if (!allowed) return null;
 
   return <>{children}</>;
 }
