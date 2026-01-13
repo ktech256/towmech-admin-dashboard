@@ -1,22 +1,18 @@
-import api, { getAuthHeader } from "@/lib/api/axios";
+import api from "@/lib/api/axios";
 
 export async function fetchAdminTickets(params?: {
   status?: string;
   type?: string;
   priority?: string;
 }) {
-  const res = await api.get("/api/admin/support/tickets", {
-    headers: getAuthHeader(),
-    params,
-  });
+  const res = await api.get("/api/admin/support/tickets", { params });
   return res.data;
 }
 
 export async function assignTicket(ticketId: string, adminId?: string) {
   const res = await api.patch(
     `/api/admin/support/tickets/${ticketId}/assign`,
-    { adminId },
-    { headers: getAuthHeader() }
+    { adminId }
   );
   return res.data;
 }
@@ -27,8 +23,7 @@ export async function updateTicket(
 ) {
   const res = await api.patch(
     `/api/admin/support/tickets/${ticketId}/update`,
-    payload,
-    { headers: getAuthHeader() }
+    payload
   );
   return res.data;
 }

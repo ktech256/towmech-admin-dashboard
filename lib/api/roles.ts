@@ -1,12 +1,9 @@
-import api, { getAuthHeader } from "@/lib/api/axios";
-import axios from "axios";
+import api from "@/lib/api/axios";
 
 // ✅ Fetch all admin users (ADMIN + SUPERADMIN)
 export async function fetchAdmins() {
   try {
-    const res = await api.get("/api/superadmin/admins", {
-      headers: getAuthHeader(),
-    });
+    const res = await api.get("/api/superadmin/admins");
     return res.data;
   } catch (err: any) {
     throw new Error(
@@ -26,9 +23,7 @@ export async function createAdmin(payload: {
   permissions?: Record<string, boolean>;
 }) {
   try {
-    const res = await api.post("/api/superadmin/create-admin", payload, {
-      headers: getAuthHeader(),
-    });
+    const res = await api.post("/api/superadmin/create-admin", payload);
     return res.data;
   } catch (err: any) {
     const message =
@@ -47,8 +42,7 @@ export async function updateAdminPermissions(
   try {
     const res = await api.patch(
       `/api/superadmin/admin/${adminId}/permissions`,
-      { permissions },
-      { headers: getAuthHeader() }
+      { permissions }
     );
     return res.data;
   } catch (err: any) {
@@ -63,11 +57,7 @@ export async function updateAdminPermissions(
 // ✅ Archive admin (SuperAdmin only)
 export async function archiveAdmin(adminId: string) {
   try {
-    const res = await api.patch(
-      `/api/superadmin/admin/${adminId}/archive`,
-      {},
-      { headers: getAuthHeader() }
-    );
+    const res = await api.patch(`/api/superadmin/admin/${adminId}/archive`, {});
     return res.data;
   } catch (err: any) {
     throw new Error(
@@ -81,11 +71,7 @@ export async function archiveAdmin(adminId: string) {
 // ✅ Suspend / Unsuspend / Ban / Unban admins via adminUsers routes
 export async function suspendUser(userId: string) {
   try {
-    const res = await api.patch(
-      `/api/admin/users/${userId}/suspend`,
-      {},
-      { headers: getAuthHeader() }
-    );
+    const res = await api.patch(`/api/admin/users/${userId}/suspend`, {});
     return res.data;
   } catch (err: any) {
     throw new Error(
@@ -98,11 +84,7 @@ export async function suspendUser(userId: string) {
 
 export async function unsuspendUser(userId: string) {
   try {
-    const res = await api.patch(
-      `/api/admin/users/${userId}/unsuspend`,
-      {},
-      { headers: getAuthHeader() }
-    );
+    const res = await api.patch(`/api/admin/users/${userId}/unsuspend`, {});
     return res.data;
   } catch (err: any) {
     throw new Error(
@@ -115,11 +97,7 @@ export async function unsuspendUser(userId: string) {
 
 export async function banUser(userId: string) {
   try {
-    const res = await api.patch(
-      `/api/admin/users/${userId}/ban`,
-      {},
-      { headers: getAuthHeader() }
-    );
+    const res = await api.patch(`/api/admin/users/${userId}/ban`, {});
     return res.data;
   } catch (err: any) {
     throw new Error(
@@ -132,11 +110,7 @@ export async function banUser(userId: string) {
 
 export async function unbanUser(userId: string) {
   try {
-    const res = await api.patch(
-      `/api/admin/users/${userId}/unban`,
-      {},
-      { headers: getAuthHeader() }
-    );
+    const res = await api.patch(`/api/admin/users/${userId}/unban`, {});
     return res.data;
   } catch (err: any) {
     throw new Error(

@@ -1,25 +1,17 @@
-import api, { getAuthHeader } from "@/lib/api/axios";
+import api from "@/lib/api/axios";
 
 export async function fetchAdminPayments() {
-  const res = await api.get("/api/admin/payments", {
-    headers: getAuthHeader(),
-  });
+  const res = await api.get("/api/admin/payments");
   return res.data;
 }
 
 export async function fetchPaymentById(id: string) {
-  const res = await api.get(`/api/admin/payments/${id}`, {
-    headers: getAuthHeader(),
-  });
+  const res = await api.get(`/api/admin/payments/${id}`);
   return res.data;
 }
 
 export async function refundPayment(id: string) {
-  const res = await api.patch(
-    `/api/admin/payments/${id}/refund`,
-    {},
-    { headers: getAuthHeader() }
-  );
+  const res = await api.patch(`/api/admin/payments/${id}/refund`, {});
   return res.data;
 }
 
@@ -28,10 +20,6 @@ export async function refundPayment(id: string) {
  * PATCH /api/payments/job/:jobId/mark-paid
  */
 export async function markPaymentPaid(jobId: string) {
-  const res = await api.patch(
-    `/api/payments/job/${jobId}/mark-paid`,
-    {},
-    { headers: getAuthHeader() }
-  );
+  const res = await api.patch(`/api/payments/job/${jobId}/mark-paid`, {});
   return res.data;
 }

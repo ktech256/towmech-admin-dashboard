@@ -1,4 +1,4 @@
-import api, { getAuthHeader } from "@/lib/api/axios";
+import api from "@/lib/api/axios";
 
 export type BroadcastPayload = {
   audience: "ALL" | "CUSTOMERS" | "PROVIDERS";
@@ -8,15 +8,11 @@ export type BroadcastPayload = {
 };
 
 export async function broadcastNotification(payload: BroadcastPayload) {
-  const res = await api.post("/api/admin/notifications/broadcast", payload, {
-    headers: getAuthHeader(),
-  });
+  const res = await api.post("/api/admin/notifications/broadcast", payload);
   return res.data;
 }
 
 export async function fetchNotificationLogs() {
-  const res = await api.get("/api/admin/notifications/logs", {
-    headers: getAuthHeader(),
-  });
+  const res = await api.get("/api/admin/notifications/logs");
   return res.data;
 }
