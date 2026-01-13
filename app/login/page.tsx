@@ -4,13 +4,10 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { loginWithPhonePassword, verifyOtp } from "@/lib/api/auth";
 
-type Step = "LOGIN" | "OTP";
-
 export default function LoginPage() {
   const router = useRouter();
 
-  const [step, setStep] = useState<Step>("LOGIN");
-
+  const [step, setStep] = useState<"LOGIN" | "OTP">("LOGIN");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
@@ -18,17 +15,12 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Optional debug display (safe)
-  const apiBase =
-    process.env.NEXT_PUBLIC_API_URL ||
-    process.env.NEXT_PUBLIC_API_BASE ||
+  const API_BASE =
     process.env.NEXT_PUBLIC_API_BASE_URL ||
-    process.env.NEXT_PUBLIC_API_URL_BASE ||
-    process.env.NEXT_PUBLIC_API ||
-    process.env.NEXT_PUBLIC_API_URL?.toString() ||
-    "";
+    process.env.NEXT_PUBLIC_API_URL ||
+    "http://localhost:5000";
 
-  const loginUrl = `${apiBase || "(env missing)"}/auth/login`;
+  const loginUrl = `${API_BASE.replace(/\/$/, "")}/auth/login`;
 
   const handleLogin = async () => {
     setError("");
@@ -55,7 +47,7 @@ export default function LoginPage() {
         return;
       }
 
-      // ✅ Any other response: show server message
+      // ❌ Unexpected shape
       setError(data?.message || "Unexpected response from server.");
     } catch (err: any) {
       setError(err?.response?.data?.message || "Login failed");
@@ -79,7 +71,6 @@ export default function LoginPage() {
 
       localStorage.setItem("adminToken", token);
       localStorage.setItem("token", token); // optional compatibility
-
       router.push("/dashboard");
     } catch (err: any) {
       setError(err?.response?.data?.message || "OTP verification failed");
@@ -92,11 +83,12 @@ export default function LoginPage() {
     <div style={{ maxWidth: 420, margin: "50px auto" }}>
       <h2>TowMech Admin Login</h2>
 
-      {/* ✅ Debug info so we can confirm prod is using correct API */}
-      <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 14 }}>
-        <div>API Base: {apiBase || "(missing NEXT_PUBLIC_API_URL)"}</div>
-        <div>Login URL: {loginUrl}</div>
-      </div>
+      {/* Debug lines (helpful on Render) */}
+      <p style={{ fontSize: 12, color: "#666" }}>
+        API Base: {API_BASE}
+        <br />
+        Login URL: {loginUrl}
+      </p>
 
       {step === "LOGIN" && (
         <>
@@ -106,7 +98,6 @@ export default function LoginPage() {
             onChange={(e) => setPhone(e.target.value)}
             style={{ width: "100%", padding: 10, marginBottom: 10 }}
             placeholder="071..."
-            autoComplete="username"
           />
 
           <label>Password</label>
@@ -115,7 +106,6 @@ export default function LoginPage() {
             onChange={(e) => setPassword(e.target.value)}
             type="password"
             style={{ width: "100%", padding: 10, marginBottom: 10 }}
-            autoComplete="current-password"
           />
 
           {error && <p style={{ color: "red" }}>{error}</p>}
@@ -138,16 +128,15 @@ export default function LoginPage() {
             onChange={(e) => setOtp(e.target.value)}
             style={{ width: "100%", padding: 10, marginBottom: 10 }}
             placeholder="Enter OTP"
-            inputMode="numeric"
           />
 
           {error && <p style={{ color: "red" }}>{error}</p>}
 
-          <div style={{ display: "flex", gap: 10 }}>
-            <button onClick={handleVerifyOtp} disabled={loading} style={{ padding: 10 }}>
-              {loading ? "..." : "Verify OTP"}
-            </button>
+          <button onClick={handleVerifyOtp} disabled={loading} style={{ padding: 10 }}>
+            {loading ? "..." : "Verify OTP"}
+          </button>
 
+          <div style={{ marginTop: 10 }}>
             <button
               onClick={() => {
                 setOtp("");
