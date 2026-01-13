@@ -1,24 +1,5 @@
-import axios from "axios";
-
-const API_ORIGIN =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/+$/, "") ||
-  "http://localhost:5000";
-
-const api = axios.create({
-  baseURL: API_ORIGIN,
-});
-
-// ✅ Attach token automatically
-api.interceptors.request.use((config) => {
-  if (typeof window !== "undefined") {
-    const token =
-      localStorage.getItem("adminToken") ||
-      localStorage.getItem("token") ||
-      "";
-    if (token) config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
+// lib/api/ratingsApi.ts
+import api from "@/lib/api/axios";
 
 export type RatingItem = {
   _id: string;
@@ -44,7 +25,8 @@ export type RatingsListResponse = {
   ratings: RatingItem[];
 };
 
-const ADMIN_RATINGS_BASE = "/api/admin/ratings";
+// ✅ baseURL already includes /api, so use /admin/... here
+const ADMIN_RATINGS_BASE = "/admin/ratings";
 
 export async function fetchAdminRatings(params?: {
   page?: number;
