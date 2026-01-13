@@ -8,6 +8,7 @@ export default function LoginPage() {
   const router = useRouter();
 
   const [step, setStep] = useState<"LOGIN" | "OTP">("LOGIN");
+
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
@@ -29,15 +30,22 @@ export default function LoginPage() {
     try {
       const data = await loginWithPhonePassword({ phone, password });
 
-      // ✅ CASE 1: Admin/SuperAdmin returns token immediately
+      console.log("LOGIN RESPONSE:", data);
+
+      // ✅ Admin/SuperAdmin returns token immediately
       if (data?.token) {
         localStorage.setItem("adminToken", data.token);
-        localStorage.setItem("token", data.token); // optional compatibility
-        router.push("/dashboard");
+        localStorage.setItem("token", data.token); // compatibility (if your interceptor checks this)
+
+        // ✅ verify it saved
+        console.log("Saved adminToken:", localStorage.getItem("adminToken"));
+
+        // ✅ hard redirect (stronger than router.push when guards/middleware interfere)
+        window.location.href = "/dashboard";
         return;
       }
 
-      // ✅ CASE 2: OTP required (customers/providers)
+      // ✅ OTP flow
       const requiresOtp =
         data?.requiresOtp === true ||
         String(data?.message || "").toLowerCase().includes("otp");
@@ -47,7 +55,6 @@ export default function LoginPage() {
         return;
       }
 
-      // ❌ Unexpected shape
       setError(data?.message || "Unexpected response from server.");
     } catch (err: any) {
       setError(err?.response?.data?.message || "Login failed");
@@ -63,6 +70,8 @@ export default function LoginPage() {
     try {
       const data = await verifyOtp({ phone, otp });
 
+      console.log("VERIFY OTP RESPONSE:", data);
+
       const token = data?.token;
       if (!token) {
         setError("OTP verified but token missing from response.");
@@ -70,8 +79,9 @@ export default function LoginPage() {
       }
 
       localStorage.setItem("adminToken", token);
-      localStorage.setItem("token", token); // optional compatibility
-      router.push("/dashboard");
+      localStorage.setItem("token", token);
+
+      window.location.href = "/dashboard";
     } catch (err: any) {
       setError(err?.response?.data?.message || "OTP verification failed");
     } finally {
@@ -83,7 +93,7 @@ export default function LoginPage() {
     <div style={{ maxWidth: 420, margin: "50px auto" }}>
       <h2>TowMech Admin Login</h2>
 
-      {/* Debug lines (helpful on Render) */}
+      {/* Debug */}
       <p style={{ fontSize: 12, color: "#666" }}>
         API Base: {API_BASE}
         <br />
