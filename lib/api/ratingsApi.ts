@@ -12,13 +12,34 @@ export type AdminRatingsQuery = {
   maxStars?: number;
 };
 
+/**
+ * ✅ Allow job to be either:
+ * - string id
+ * - populated object (title/_id)
+ * - null/undefined
+ */
+export type RatingJobRef =
+  | string
+  | {
+      _id?: string;
+      title?: string;
+      [key: string]: any;
+    }
+  | null
+  | undefined;
+
 export type RatingItem = {
   _id: string;
-  job?: string;
+
+  // ✅ was: job?: string;
+  job?: RatingJobRef;
+
   rater?: any;
   target?: any;
+
   raterRole?: string;
   targetRole?: string;
+
   rating: number;
   comment?: string;
   createdAt?: string;
@@ -30,8 +51,6 @@ export type RatingItem = {
  *
  * UI expects:
  * { ratings: [...] }
- *
- * So we support BOTH to stop TS errors + avoid changing UI files.
  */
 export type AdminRatingsResponse = {
   items?: RatingItem[];
@@ -61,7 +80,7 @@ export async function getAdminRatings(query: AdminRatingsQuery = {}) {
 
   const data = res.data || {};
 
-  // ✅ Normalize response so UI always gets "ratings"
+  // ✅ Normalize so UI always gets "ratings"
   const normalized: AdminRatingsResponse = {
     ...data,
     items: data.items ?? data.ratings ?? [],
