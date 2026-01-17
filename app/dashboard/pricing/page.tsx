@@ -32,10 +32,10 @@ type PricingConfig = {
     mechanic?: ProviderPricing;
   };
 
-  // ✅ NEW: per-type TowTruck pricing (Admin primary settings)
+  // ✅ per-type TowTruck pricing (Admin primary settings)
   towTruckTypePricing?: TowTruckTypePricingMap;
 
-  // ✅ NEW: booking fees (so mechanic can stop falling back to 200)
+  // ✅ booking fees (what the Android app uses as mechanic fallback)
   bookingFees?: BookingFees;
 };
 
@@ -120,10 +120,9 @@ export default function PricingPage() {
 
       const safeTowTruckTypePricing = ensureTowTruckTypePricing(cfg?.towTruckTypePricing);
 
-      // ✅ Keep bookingFees if it exists (mechanic needs it)
       const bookingFees: BookingFees = {
-        towTruckPercent: cfg?.bookingFees?.towTruckPercent,
-        mechanicFixed: cfg?.bookingFees?.mechanicFixed ?? 200,
+        towTruckPercent: Number(cfg?.bookingFees?.towTruckPercent ?? 15),
+        mechanicFixed: Number(cfg?.bookingFees?.mechanicFixed ?? 200),
       };
 
       setConfig({
@@ -170,16 +169,6 @@ export default function PricingPage() {
       },
     };
 
-    // ✅ IMPORTANT:
-    // Mechanic booking fee fallback in backend is bookingFees.mechanicFixed (defaults 200).
-    // Keep it in sync with mechanic baseFee so dashboard changes reflect in app.
-    if (field === "baseFee") {
-      updated.bookingFees = {
-        ...(config.bookingFees || {}),
-        mechanicFixed: value,
-      };
-    }
-
     setConfig(updated);
   };
 
@@ -210,33 +199,31 @@ export default function PricingPage() {
     setError(null);
 
     try {
+      const mechanicBaseFee = Number(
+        config.providerBasePricing?.mechanic?.baseFee ?? defaultMechanic.baseFee
+      );
+
       /**
-       * ✅ Save payload includes:
-       * - currency
-       * - providerBasePricing (mechanic + towTruck global fallback kept)
-       * - towTruckTypePricing (PRIMARY admin settings for tow truck types)
-       * - bookingFees.mechanicFixed (so mechanic no longer stuck at 200)
+       * ✅ IMPORTANT FIX:
+       * When saving Mechanic tab, ALSO update bookingFees.mechanicFixed
+       * so the Android app stops falling back to 200.
        *
-       * TowTruck settings remain untouched because we still send towTruckTypePricing exactly as before.
+       * ✅ DOES NOT TOUCH towTruckTypePricing (so your per-type settings remain intact).
        */
-      const payload = {
+      const payload: any = {
         currency: config.currency,
         providerBasePricing: config.providerBasePricing,
         towTruckTypePricing: config.towTruckTypePricing,
-
-        // ✅ NEW: include bookingFees but ONLY the mechanicFixed (safe, won't overwrite towTruck data)
         bookingFees: {
-          ...(config.bookingFees || {}),
-          mechanicFixed:
-            config.bookingFees?.mechanicFixed ??
-            config.providerBasePricing?.mechanic?.baseFee ??
-            200,
+          towTruckPercent: Number(config.bookingFees?.towTruckPercent ?? 15),
+          mechanicFixed: activeTab === "Mechanic"
+            ? mechanicBaseFee
+            : Number(config.bookingFees?.mechanicFixed ?? 200),
         },
       };
 
       const res = await updatePricingConfig(payload);
 
-      // If backend returns full config, use it; else keep local
       const returned = res?.config;
       if (returned) {
         const safeTowTruckTypePricing = ensureTowTruckTypePricing(returned?.towTruckTypePricing);
@@ -254,12 +241,9 @@ export default function PricingPage() {
               defaultMechanic,
           },
           towTruckTypePricing: safeTowTruckTypePricing,
-
           bookingFees: {
-            towTruckPercent:
-              returned?.bookingFees?.towTruckPercent ?? config.bookingFees?.towTruckPercent,
-            mechanicFixed:
-              returned?.bookingFees?.mechanicFixed ?? payload.bookingFees.mechanicFixed,
+            towTruckPercent: Number(returned?.bookingFees?.towTruckPercent ?? 15),
+            mechanicFixed: Number(returned?.bookingFees?.mechanicFixed ?? payload.bookingFees.mechanicFixed ?? 200),
           },
         });
       } else {
@@ -369,7 +353,6 @@ export default function PricingPage() {
 
                   {/* TowTruck Type Pricing Fields */}
                   <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                    {/* Base Fee */}
                     <div className="space-y-2">
                       <label className="text-sm font-medium text-slate-700">
                         Base Fee
@@ -383,7 +366,6 @@ export default function PricingPage() {
                       />
                     </div>
 
-                    {/* Per KM Fee */}
                     <div className="space-y-2">
                       <label className="text-sm font-medium text-slate-700">
                         Per KM Fee
@@ -397,7 +379,6 @@ export default function PricingPage() {
                       />
                     </div>
 
-                    {/* Night Fee */}
                     <div className="space-y-2">
                       <label className="text-sm font-medium text-slate-700">
                         Night Fee (20:00 - 06:00)
@@ -411,7 +392,6 @@ export default function PricingPage() {
                       />
                     </div>
 
-                    {/* Weekend Fee */}
                     <div className="space-y-2">
                       <label className="text-sm font-medium text-slate-700">
                         Weekend Fee (Sat/Sun)
@@ -432,7 +412,6 @@ export default function PricingPage() {
                 <>
                   {/* Mechanic Pricing Fields */}
                   <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                    {/* Base Fee */}
                     <div className="space-y-2">
                       <label className="text-sm font-medium text-slate-700">
                         Base Fee
@@ -445,11 +424,10 @@ export default function PricingPage() {
                         }
                       />
                       <p className="text-xs text-muted-foreground">
-                        This also updates <code>bookingFees.mechanicFixed</code> so the app stops falling back to 200.
+                        This also controls the Mechanic booking fee fallback used by the mobile app.
                       </p>
                     </div>
 
-                    {/* Per KM Fee */}
                     <div className="space-y-2">
                       <label className="text-sm font-medium text-slate-700">
                         Per KM Fee
@@ -463,7 +441,6 @@ export default function PricingPage() {
                       />
                     </div>
 
-                    {/* Night Fee */}
                     <div className="space-y-2">
                       <label className="text-sm font-medium text-slate-700">
                         Night Fee (20:00 - 06:00)
@@ -477,7 +454,6 @@ export default function PricingPage() {
                       />
                     </div>
 
-                    {/* Weekend Fee */}
                     <div className="space-y-2">
                       <label className="text-sm font-medium text-slate-700">
                         Weekend Fee (Sat/Sun)
@@ -494,7 +470,6 @@ export default function PricingPage() {
                 </>
               )}
 
-              {/* Save */}
               <div className="flex justify-end">
                 <Button onClick={handleSave} disabled={saving}>
                   {saving ? "Saving..." : "Save Pricing"}
