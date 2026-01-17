@@ -19,6 +19,11 @@ type ProviderPricing = {
 
 type TowTruckTypePricingMap = Record<string, ProviderPricing>;
 
+type BookingFees = {
+  towTruckPercent?: number;
+  mechanicFixed?: number;
+};
+
 type PricingConfig = {
   currency?: string;
 
@@ -29,6 +34,9 @@ type PricingConfig = {
 
   // ✅ NEW: per-type TowTruck pricing (Admin primary settings)
   towTruckTypePricing?: TowTruckTypePricingMap;
+
+  // ✅ NEW: booking fees (so mechanic can stop falling back to 200)
+  bookingFees?: BookingFees;
 };
 
 const defaultTowTruck: ProviderPricing = {
@@ -112,6 +120,12 @@ export default function PricingPage() {
 
       const safeTowTruckTypePricing = ensureTowTruckTypePricing(cfg?.towTruckTypePricing);
 
+      // ✅ Keep bookingFees if it exists (mechanic needs it)
+      const bookingFees: BookingFees = {
+        towTruckPercent: cfg?.bookingFees?.towTruckPercent,
+        mechanicFixed: cfg?.bookingFees?.mechanicFixed ?? 200,
+      };
+
       setConfig({
         currency: cfg?.currency || "ZAR",
         providerBasePricing: {
@@ -119,6 +133,7 @@ export default function PricingPage() {
           mechanic,
         },
         towTruckTypePricing: safeTowTruckTypePricing,
+        bookingFees,
       });
     } catch (err: any) {
       setError(err?.response?.data?.message || "Failed to load pricing config");
@@ -155,6 +170,16 @@ export default function PricingPage() {
       },
     };
 
+    // ✅ IMPORTANT:
+    // Mechanic booking fee fallback in backend is bookingFees.mechanicFixed (defaults 200).
+    // Keep it in sync with mechanic baseFee so dashboard changes reflect in app.
+    if (field === "baseFee") {
+      updated.bookingFees = {
+        ...(config.bookingFees || {}),
+        mechanicFixed: value,
+      };
+    }
+
     setConfig(updated);
   };
 
@@ -190,13 +215,23 @@ export default function PricingPage() {
        * - currency
        * - providerBasePricing (mechanic + towTruck global fallback kept)
        * - towTruckTypePricing (PRIMARY admin settings for tow truck types)
+       * - bookingFees.mechanicFixed (so mechanic no longer stuck at 200)
        *
-       * This does NOT affect login (axios unchanged).
+       * TowTruck settings remain untouched because we still send towTruckTypePricing exactly as before.
        */
       const payload = {
         currency: config.currency,
         providerBasePricing: config.providerBasePricing,
         towTruckTypePricing: config.towTruckTypePricing,
+
+        // ✅ NEW: include bookingFees but ONLY the mechanicFixed (safe, won't overwrite towTruck data)
+        bookingFees: {
+          ...(config.bookingFees || {}),
+          mechanicFixed:
+            config.bookingFees?.mechanicFixed ??
+            config.providerBasePricing?.mechanic?.baseFee ??
+            200,
+        },
       };
 
       const res = await updatePricingConfig(payload);
@@ -205,13 +240,27 @@ export default function PricingPage() {
       const returned = res?.config;
       if (returned) {
         const safeTowTruckTypePricing = ensureTowTruckTypePricing(returned?.towTruckTypePricing);
+
         setConfig({
           currency: returned?.currency || config.currency || "ZAR",
           providerBasePricing: {
-            towTruck: returned?.providerBasePricing?.towTruck || config.providerBasePricing?.towTruck || defaultTowTruck,
-            mechanic: returned?.providerBasePricing?.mechanic || config.providerBasePricing?.mechanic || defaultMechanic,
+            towTruck:
+              returned?.providerBasePricing?.towTruck ||
+              config.providerBasePricing?.towTruck ||
+              defaultTowTruck,
+            mechanic:
+              returned?.providerBasePricing?.mechanic ||
+              config.providerBasePricing?.mechanic ||
+              defaultMechanic,
           },
           towTruckTypePricing: safeTowTruckTypePricing,
+
+          bookingFees: {
+            towTruckPercent:
+              returned?.bookingFees?.towTruckPercent ?? config.bookingFees?.towTruckPercent,
+            mechanicFixed:
+              returned?.bookingFees?.mechanicFixed ?? payload.bookingFees.mechanicFixed,
+          },
         });
       } else {
         setConfig(config);
@@ -395,6 +444,9 @@ export default function PricingPage() {
                           updateMechanicField("baseFee", Number(e.target.value))
                         }
                       />
+                      <p className="text-xs text-muted-foreground">
+                        This also updates <code>bookingFees.mechanicFixed</code> so the app stops falling back to 200.
+                      </p>
                     </div>
 
                     {/* Per KM Fee */}
