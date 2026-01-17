@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ModuleHeader } from "@/components/dashboard/module-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,7 +17,10 @@ type ProviderPricing = {
   weekendFee: number;
 };
 
-type TowTruckTypePricingMap = Record<string, ProviderPricing>;
+type BookingFees = {
+  towTruckPercent?: number;
+  mechanicFixed?: number;
+};
 
 type PricingConfig = {
   currency?: string;
@@ -27,8 +30,7 @@ type PricingConfig = {
     mechanic?: ProviderPricing;
   };
 
-  // ✅ NEW: per-type TowTruck pricing (Admin primary settings)
-  towTruckTypePricing?: TowTruckTypePricingMap;
+  bookingFees?: BookingFees;
 };
 
 const defaultTowTruck: ProviderPricing = {
@@ -45,53 +47,10 @@ const defaultMechanic: ProviderPricing = {
   weekendFee: 0,
 };
 
-// ✅ NEW preferred names (cheapest → most expensive)
-const TOW_TRUCK_TYPES = [
-  "Hook & Chain",
-  "Wheel-Lift",
-  "Flatbed/Roll Back",
-  "Boom Trucks(With Crane)",
-  "Integrated / Wrecker",
-  "Heavy-Duty Rotator(Recovery)",
-] as const;
-
-const defaultTowTruckTypePricing: ProviderPricing = {
-  baseFee: 20,
-  perKmFee: 20,
-  nightFee: 0,
-  weekendFee: 0,
-};
-
-function ensureTowTruckTypePricing(
-  incoming: TowTruckTypePricingMap | undefined | null
-): TowTruckTypePricingMap {
-  const map: TowTruckTypePricingMap = { ...(incoming || {}) };
-
-  // Ensure all types exist (do not delete anything else)
-  for (const t of TOW_TRUCK_TYPES) {
-    if (!map[t]) map[t] = { ...defaultTowTruckTypePricing };
-    else {
-      map[t] = {
-        baseFee: Number(map[t].baseFee ?? defaultTowTruckTypePricing.baseFee),
-        perKmFee: Number(map[t].perKmFee ?? defaultTowTruckTypePricing.perKmFee),
-        nightFee: Number(map[t].nightFee ?? defaultTowTruckTypePricing.nightFee),
-        weekendFee: Number(map[t].weekendFee ?? defaultTowTruckTypePricing.weekendFee),
-      };
-    }
-  }
-
-  return map;
-}
-
 export default function PricingPage() {
   const [config, setConfig] = useState<PricingConfig | null>(null);
 
   const [activeTab, setActiveTab] = useState<"TowTruck" | "Mechanic">("TowTruck");
-
-  // ✅ TowTruck Type selector (only used in TowTruck tab)
-  const [selectedTowTruckType, setSelectedTowTruckType] = useState<string>(
-    TOW_TRUCK_TYPES[0]
-  );
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -110,7 +69,10 @@ export default function PricingPage() {
       const towTruck = cfg?.providerBasePricing?.towTruck || defaultTowTruck;
       const mechanic = cfg?.providerBasePricing?.mechanic || defaultMechanic;
 
-      const safeTowTruckTypePricing = ensureTowTruckTypePricing(cfg?.towTruckTypePricing);
+      const bookingFees: BookingFees = {
+        towTruckPercent: cfg?.bookingFees?.towTruckPercent ?? 15,
+        mechanicFixed: cfg?.bookingFees?.mechanicFixed ?? 200,
+      };
 
       setConfig({
         currency: cfg?.currency || "ZAR",
@@ -118,7 +80,7 @@ export default function PricingPage() {
           towTruck,
           mechanic,
         },
-        towTruckTypePricing: safeTowTruckTypePricing,
+        bookingFees,
       });
     } catch (err: any) {
       setError(err?.response?.data?.message || "Failed to load pricing config");
@@ -131,44 +93,19 @@ export default function PricingPage() {
     loadConfig();
   }, []);
 
-  // ✅ current TowTruck type pricing (from config)
-  const currentTowTruckTypePricing = useMemo(() => {
-    const map = config?.towTruckTypePricing || ensureTowTruckTypePricing(undefined);
-    return map[selectedTowTruckType] || { ...defaultTowTruckTypePricing };
-  }, [config?.towTruckTypePricing, selectedTowTruckType]);
-
-  // ✅ current Mechanic pricing
-  const currentMechanicPricing =
-    config?.providerBasePricing?.mechanic || defaultMechanic;
-
-  const updateMechanicField = (field: keyof ProviderPricing, value: number) => {
+  const updateField = (
+    providerType: "towTruck" | "mechanic",
+    field: keyof ProviderPricing,
+    value: number
+  ) => {
     if (!config) return;
 
     const updated: PricingConfig = {
       ...config,
       providerBasePricing: {
         ...config.providerBasePricing,
-        mechanic: {
-          ...(config.providerBasePricing?.mechanic || defaultMechanic),
-          [field]: value,
-        },
-      },
-    };
-
-    setConfig(updated);
-  };
-
-  const updateTowTruckTypeField = (field: keyof ProviderPricing, value: number) => {
-    if (!config) return;
-
-    const map = ensureTowTruckTypePricing(config.towTruckTypePricing);
-
-    const updated: PricingConfig = {
-      ...config,
-      towTruckTypePricing: {
-        ...map,
-        [selectedTowTruckType]: {
-          ...(map[selectedTowTruckType] || { ...defaultTowTruckTypePricing }),
+        [providerType]: {
+          ...config.providerBasePricing?.[providerType],
           [field]: value,
         },
       },
@@ -178,52 +115,56 @@ export default function PricingPage() {
   };
 
   const handleSave = async () => {
-    if (!config) return;
+    if (!config?.providerBasePricing) return;
 
     setSaving(true);
     setMessage(null);
     setError(null);
 
     try {
-      /**
-       * ✅ Save payload includes:
-       * - currency
-       * - providerBasePricing (mechanic + towTruck global fallback kept)
-       * - towTruckTypePricing (PRIMARY admin settings for tow truck types)
-       *
-       * This does NOT affect login (axios unchanged).
-       */
-      const payload = {
+      // ✅ IMPORTANT:
+      // Mechanic booking fee in backend uses bookingFees.mechanicFixed (fallback),
+      // not providerBasePricing.mechanic.baseFee.
+      const mechanicBaseFee = config.providerBasePricing.mechanic?.baseFee ?? defaultMechanic.baseFee;
+
+      const payload: any = {
         currency: config.currency,
         providerBasePricing: config.providerBasePricing,
-        towTruckTypePricing: config.towTruckTypePricing,
+        bookingFees: {
+          towTruckPercent: config.bookingFees?.towTruckPercent ?? 15,
+          mechanicFixed:
+            activeTab === "Mechanic"
+              ? mechanicBaseFee // ✅ make dashboard mechanic baseFee drive booking fee
+              : config.bookingFees?.mechanicFixed ?? 200,
+        },
       };
 
       const res = await updatePricingConfig(payload);
 
-      // If backend returns full config, use it; else keep local
-      const returned = res?.config;
-      if (returned) {
-        const safeTowTruckTypePricing = ensureTowTruckTypePricing(returned?.towTruckTypePricing);
-        setConfig({
-          currency: returned?.currency || config.currency || "ZAR",
-          providerBasePricing: {
-            towTruck: returned?.providerBasePricing?.towTruck || config.providerBasePricing?.towTruck || defaultTowTruck,
-            mechanic: returned?.providerBasePricing?.mechanic || config.providerBasePricing?.mechanic || defaultMechanic,
-          },
-          towTruckTypePricing: safeTowTruckTypePricing,
-        });
-      } else {
-        setConfig(config);
-      }
+      // keep local state consistent too
+      const nextCfg = res?.config || config;
+      setConfig({
+        ...config,
+        ...nextCfg,
+        bookingFees: {
+          towTruckPercent: nextCfg?.bookingFees?.towTruckPercent ?? payload.bookingFees.towTruckPercent,
+          mechanicFixed: nextCfg?.bookingFees?.mechanicFixed ?? payload.bookingFees.mechanicFixed,
+        },
+      });
 
-      setMessage("✅ Pricing updated successfully!");
+      setMessage("✅ Provider pricing updated successfully!");
     } catch (err: any) {
-      setError(err?.response?.data?.message || "Failed to update pricing");
+      setError(err?.response?.data?.message || "Failed to update provider pricing");
     } finally {
       setSaving(false);
     }
   };
+
+  const currentProviderKey = activeTab === "TowTruck" ? "towTruck" : "mechanic";
+
+  const currentPricing =
+    config?.providerBasePricing?.[currentProviderKey] ||
+    (activeTab === "TowTruck" ? defaultTowTruck : defaultMechanic);
 
   return (
     <div className="space-y-6">
@@ -237,7 +178,7 @@ export default function PricingPage() {
           <div>
             <CardTitle className="text-base">Provider Pricing Rules</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Configure TowTruck per-type pricing (primary) and Mechanic pricing.
+              Configure base fares and incentives per provider type.
             </p>
           </div>
 
@@ -278,7 +219,7 @@ export default function PricingPage() {
 
           {!loading && config && (
             <>
-              {/* Currency (global) */}
+              {/* Currency */}
               <div className="space-y-2 max-w-xs">
                 <label className="text-sm font-medium text-slate-700">
                   Currency
@@ -292,160 +233,85 @@ export default function PricingPage() {
                 />
               </div>
 
-              {activeTab === "TowTruck" && (
-                <>
-                  {/* TowTruck Type Selector */}
-                  <div className="space-y-2 max-w-md">
-                    <label className="text-sm font-medium text-slate-700">
-                      TowTruck Type (Primary Pricing)
-                    </label>
+              {/* Pricing Fields */}
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                {/* Base Fee */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">
+                    Base Fee
+                  </label>
+                  <Input
+                    type="number"
+                    value={currentPricing.baseFee ?? 0}
+                    onChange={(e) =>
+                      updateField(
+                        currentProviderKey,
+                        "baseFee",
+                        Number(e.target.value)
+                      )
+                    }
+                  />
+                </div>
 
-                    <select
-                      value={selectedTowTruckType}
-                      onChange={(e) => setSelectedTowTruckType(e.target.value)}
-                      className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-                    >
-                      {TOW_TRUCK_TYPES.map((t) => (
-                        <option key={t} value={t}>
-                          {t}
-                        </option>
-                      ))}
-                    </select>
+                {/* Per KM Fee */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">
+                    Per KM Fee
+                  </label>
+                  <Input
+                    type="number"
+                    value={currentPricing.perKmFee ?? 0}
+                    onChange={(e) =>
+                      updateField(
+                        currentProviderKey,
+                        "perKmFee",
+                        Number(e.target.value)
+                      )
+                    }
+                  />
+                </div>
 
-                    <p className="text-xs text-muted-foreground">
-                      These values are the primary admin settings for the selected TowTruck type.
-                      Distance, surge, vehicle multipliers, and any remaining multipliers are applied automatically by the backend.
-                    </p>
-                  </div>
+                {/* Night Fee */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">
+                    Night Fee (20:00 - 06:00)
+                  </label>
+                  <Input
+                    type="number"
+                    value={currentPricing.nightFee ?? 0}
+                    onChange={(e) =>
+                      updateField(
+                        currentProviderKey,
+                        "nightFee",
+                        Number(e.target.value)
+                      )
+                    }
+                  />
+                </div>
 
-                  {/* TowTruck Type Pricing Fields */}
-                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                    {/* Base Fee */}
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-slate-700">
-                        Base Fee
-                      </label>
-                      <Input
-                        type="number"
-                        value={currentTowTruckTypePricing.baseFee ?? 0}
-                        onChange={(e) =>
-                          updateTowTruckTypeField("baseFee", Number(e.target.value))
-                        }
-                      />
-                    </div>
-
-                    {/* Per KM Fee */}
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-slate-700">
-                        Per KM Fee
-                      </label>
-                      <Input
-                        type="number"
-                        value={currentTowTruckTypePricing.perKmFee ?? 0}
-                        onChange={(e) =>
-                          updateTowTruckTypeField("perKmFee", Number(e.target.value))
-                        }
-                      />
-                    </div>
-
-                    {/* Night Fee */}
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-slate-700">
-                        Night Fee (20:00 - 06:00)
-                      </label>
-                      <Input
-                        type="number"
-                        value={currentTowTruckTypePricing.nightFee ?? 0}
-                        onChange={(e) =>
-                          updateTowTruckTypeField("nightFee", Number(e.target.value))
-                        }
-                      />
-                    </div>
-
-                    {/* Weekend Fee */}
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-slate-700">
-                        Weekend Fee (Sat/Sun)
-                      </label>
-                      <Input
-                        type="number"
-                        value={currentTowTruckTypePricing.weekendFee ?? 0}
-                        onChange={(e) =>
-                          updateTowTruckTypeField("weekendFee", Number(e.target.value))
-                        }
-                      />
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {activeTab === "Mechanic" && (
-                <>
-                  {/* Mechanic Pricing Fields */}
-                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                    {/* Base Fee */}
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-slate-700">
-                        Base Fee
-                      </label>
-                      <Input
-                        type="number"
-                        value={currentMechanicPricing.baseFee ?? 0}
-                        onChange={(e) =>
-                          updateMechanicField("baseFee", Number(e.target.value))
-                        }
-                      />
-                    </div>
-
-                    {/* Per KM Fee */}
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-slate-700">
-                        Per KM Fee
-                      </label>
-                      <Input
-                        type="number"
-                        value={currentMechanicPricing.perKmFee ?? 0}
-                        onChange={(e) =>
-                          updateMechanicField("perKmFee", Number(e.target.value))
-                        }
-                      />
-                    </div>
-
-                    {/* Night Fee */}
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-slate-700">
-                        Night Fee (20:00 - 06:00)
-                      </label>
-                      <Input
-                        type="number"
-                        value={currentMechanicPricing.nightFee ?? 0}
-                        onChange={(e) =>
-                          updateMechanicField("nightFee", Number(e.target.value))
-                        }
-                      />
-                    </div>
-
-                    {/* Weekend Fee */}
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-slate-700">
-                        Weekend Fee (Sat/Sun)
-                      </label>
-                      <Input
-                        type="number"
-                        value={currentMechanicPricing.weekendFee ?? 0}
-                        onChange={(e) =>
-                          updateMechanicField("weekendFee", Number(e.target.value))
-                        }
-                      />
-                    </div>
-                  </div>
-                </>
-              )}
+                {/* Weekend Fee */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">
+                    Weekend Fee (Sat/Sun)
+                  </label>
+                  <Input
+                    type="number"
+                    value={currentPricing.weekendFee ?? 0}
+                    onChange={(e) =>
+                      updateField(
+                        currentProviderKey,
+                        "weekendFee",
+                        Number(e.target.value)
+                      )
+                    }
+                  />
+                </div>
+              </div>
 
               {/* Save */}
               <div className="flex justify-end">
                 <Button onClick={handleSave} disabled={saving}>
-                  {saving ? "Saving..." : "Save Pricing"}
+                  {saving ? "Saving..." : "Save Provider Pricing"}
                 </Button>
               </div>
             </>
