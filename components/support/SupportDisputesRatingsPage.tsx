@@ -218,7 +218,9 @@ export default function SupportDisputesRatingsPage() {
                         <TableCell className="max-w-[320px] truncate">
                           {r.comment?.trim() ? r.comment : <span className="text-muted-foreground">—</span>}
                         </TableCell>
-                        <TableCell>{new Date(r.createdAt).toLocaleDateString()}</TableCell>
+                        <TableCell>
+  {r.createdAt ? new Date(r.createdAt).toLocaleString() : "—"}
+</TableCell>
                         <TableCell className="text-right">
                           <Button
                             size="sm"
