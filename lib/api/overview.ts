@@ -1,8 +1,7 @@
-// lib/api/overview.ts
-import api from "@/lib/api/axios";
+import api from "./axios";
 
-export async function fetchOverviewSummary() {
-  // baseURL includes /api, so this must be /admin/... not /api/admin/...
-  const res = await api.get("/admin/overview/summary");
+export async function getOverviewSummary() {
+  // ✅ FIX: backend routes are under /api
+  const res = await api.get("/api/admin/overview/summary");
   return res.data;
 }
