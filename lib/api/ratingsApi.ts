@@ -31,7 +31,7 @@ export type RatingJobRef =
 export type RatingItem = {
   _id: string;
 
-  // ✅ was: job?: string;
+  // ✅ job can be string OR populated object
   job?: RatingJobRef;
 
   rater?: any;
@@ -92,11 +92,17 @@ export async function getAdminRatings(query: AdminRatingsQuery = {}) {
 
 /**
  * ✅ Get rating by id (details modal)
+ * FIX: Return the actual RatingItem, not the wrapper object { rating: RatingItem }
  */
-export async function getAdminRatingById(id: string) {
+export async function getAdminRatingById(id: string): Promise<RatingItem> {
   if (!id) throw new Error("Rating id is required");
+
   const res = await api.get<{ rating: RatingItem }>(`${ADMIN_RATINGS_BASE}/${id}`);
-  return res.data;
+
+  // ✅ return the actual rating object
+  const rating = res.data?.rating;
+  if (!rating) throw new Error("Rating not found");
+  return rating;
 }
 
 /**

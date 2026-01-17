@@ -105,8 +105,13 @@ export default function SupportDisputesRatingsPage() {
     setSelectedId(id);
     setActionLoading(true);
     try {
-      const data = await fetchAdminRatingById(id);
-      setSelected(data);
+      const data: any = await fetchAdminRatingById(id);
+
+      // ✅ EXTRA SAFETY:
+      // supports both shapes:
+      // 1) RatingItem
+      // 2) { rating: RatingItem }
+      setSelected(data?.rating ?? data);
     } catch {
       alert("Failed to load rating details ❌");
       setSelectedId(null);
@@ -280,7 +285,8 @@ export default function SupportDisputesRatingsPage() {
           ) : selected ? (
             <div className="space-y-3 text-sm">
               <div>
-                <strong>Stars:</strong> {selected.rating}★
+                <strong>Stars:</strong>{" "}
+                {typeof selected.rating === "number" ? selected.rating : (selected?.rating?.rating ?? "—")}★
               </div>
               <div>
                 <strong>Comment:</strong>
