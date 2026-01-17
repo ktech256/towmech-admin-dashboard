@@ -3,9 +3,13 @@ import api from "./axios";
 export type AdminRatingsQuery = {
   page?: number;
   limit?: number;
+
+  // UI uses "search", backend may use "q"
+  search?: string;
+  q?: string;
+
   minStars?: number;
   maxStars?: number;
-  q?: string;
 };
 
 export type RatingItem = {
@@ -34,9 +38,16 @@ const ADMIN_RATINGS_BASE = "/api/admin/ratings";
  * ✅ List ratings (table)
  */
 export async function getAdminRatings(query: AdminRatingsQuery = {}) {
-  const res = await api.get<AdminRatingsResponse>(ADMIN_RATINGS_BASE, {
-    params: query,
-  });
+  // Normalize: if UI sends "search", convert to "q" for backend.
+  const params: AdminRatingsQuery = {
+    ...query,
+    q: (query.q ?? query.search ?? "").trim() || undefined,
+  };
+
+  // Optional: also keep "search" off the request if backend doesn't expect it
+  delete (params as any).search;
+
+  const res = await api.get<AdminRatingsResponse>(ADMIN_RATINGS_BASE, { params });
   return res.data;
 }
 
