@@ -28,10 +28,10 @@ export type AdminRatingsResponse = {
   pages: number;
 };
 
-const ADMIN_RATINGS_BASE = "/api/admin/ratings"; // ✅ FIX: add /api
+const ADMIN_RATINGS_BASE = "/api/admin/ratings";
 
 /**
- * ✅ Keep a very generic function name
+ * ✅ List ratings (table)
  */
 export async function getAdminRatings(query: AdminRatingsQuery = {}) {
   const res = await api.get<AdminRatingsResponse>(ADMIN_RATINGS_BASE, {
@@ -41,7 +41,16 @@ export async function getAdminRatings(query: AdminRatingsQuery = {}) {
 }
 
 /**
- * ✅ Compatibility exports (in case components import these names)
+ * ✅ Get rating by id (details modal)
+ */
+export async function getAdminRatingById(id: string) {
+  if (!id) throw new Error("Rating id is required");
+  const res = await api.get<{ rating: RatingItem }>(`${ADMIN_RATINGS_BASE}/${id}`);
+  return res.data;
+}
+
+/**
+ * ✅ Compatibility exports (match what components import)
  */
 export async function fetchAdminRatings(query: AdminRatingsQuery = {}) {
   return getAdminRatings(query);
@@ -49,4 +58,8 @@ export async function fetchAdminRatings(query: AdminRatingsQuery = {}) {
 
 export async function fetchRatings(query: AdminRatingsQuery = {}) {
   return getAdminRatings(query);
+}
+
+export async function fetchAdminRatingById(id: string) {
+  return getAdminRatingById(id);
 }
