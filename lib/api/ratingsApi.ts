@@ -24,12 +24,23 @@ export type RatingItem = {
   createdAt?: string;
 };
 
+/**
+ * ✅ Backend may return:
+ * { items: [...] }
+ *
+ * UI expects:
+ * { ratings: [...] }
+ *
+ * So we support BOTH to stop TS errors + avoid changing UI files.
+ */
 export type AdminRatingsResponse = {
-  items: RatingItem[];
-  page: number;
-  limit: number;
-  total: number;
-  pages: number;
+  items?: RatingItem[];
+  ratings?: RatingItem[];
+
+  page?: number;
+  limit?: number;
+  total?: number;
+  pages?: number;
 };
 
 const ADMIN_RATINGS_BASE = "/api/admin/ratings";
@@ -38,17 +49,26 @@ const ADMIN_RATINGS_BASE = "/api/admin/ratings";
  * ✅ List ratings (table)
  */
 export async function getAdminRatings(query: AdminRatingsQuery = {}) {
-  // Normalize: if UI sends "search", convert to "q" for backend.
-  const params: AdminRatingsQuery = {
+  const params: any = {
     ...query,
     q: (query.q ?? query.search ?? "").trim() || undefined,
   };
 
-  // Optional: also keep "search" off the request if backend doesn't expect it
-  delete (params as any).search;
+  // Remove search so backend doesn't reject unknown params
+  delete params.search;
 
   const res = await api.get<AdminRatingsResponse>(ADMIN_RATINGS_BASE, { params });
-  return res.data;
+
+  const data = res.data || {};
+
+  // ✅ Normalize response so UI always gets "ratings"
+  const normalized: AdminRatingsResponse = {
+    ...data,
+    items: data.items ?? data.ratings ?? [],
+    ratings: data.ratings ?? data.items ?? [],
+  };
+
+  return normalized;
 }
 
 /**
