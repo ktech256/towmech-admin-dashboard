@@ -28,9 +28,25 @@ export type AdminRatingsResponse = {
   pages: number;
 };
 
-const ADMIN_RATINGS_BASE = "/api/admin/ratings"; // ✅ FIX
+const ADMIN_RATINGS_BASE = "/api/admin/ratings"; // ✅ FIX: add /api
 
+/**
+ * ✅ Keep a very generic function name
+ */
 export async function getAdminRatings(query: AdminRatingsQuery = {}) {
-  const res = await api.get<AdminRatingsResponse>(ADMIN_RATINGS_BASE, { params: query });
+  const res = await api.get<AdminRatingsResponse>(ADMIN_RATINGS_BASE, {
+    params: query,
+  });
   return res.data;
+}
+
+/**
+ * ✅ Compatibility exports (in case components import these names)
+ */
+export async function fetchAdminRatings(query: AdminRatingsQuery = {}) {
+  return getAdminRatings(query);
+}
+
+export async function fetchRatings(query: AdminRatingsQuery = {}) {
+  return getAdminRatings(query);
 }
