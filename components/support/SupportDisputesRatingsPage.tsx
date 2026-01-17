@@ -63,7 +63,10 @@ export default function SupportDisputesRatingsPage() {
         minStars: minStars === "" ? undefined : Number(minStars),
         maxStars: maxStars === "" ? undefined : Number(maxStars),
       });
-      setItems(data.ratings || []);
+
+      // ✅ FIX: Some APIs return { ratings: [] } while others return { items: [] }
+      const list = (data as any)?.ratings ?? (data as any)?.items ?? [];
+      setItems(list || []);
     } catch {
       alert("Failed to load ratings ❌");
     } finally {
@@ -218,9 +221,12 @@ export default function SupportDisputesRatingsPage() {
                         <TableCell className="max-w-[320px] truncate">
                           {r.comment?.trim() ? r.comment : <span className="text-muted-foreground">—</span>}
                         </TableCell>
+
+                        {/* ✅ FIX: r.createdAt can be undefined */}
                         <TableCell>
-  {r.createdAt ? new Date(r.createdAt).toLocaleString() : "—"}
-</TableCell>
+                          {r.createdAt ? new Date(r.createdAt).toLocaleString() : "—"}
+                        </TableCell>
+
                         <TableCell className="text-right">
                           <Button
                             size="sm"
@@ -299,8 +305,11 @@ export default function SupportDisputesRatingsPage() {
               <div>
                 <strong>Job:</strong> {selected.job?.title || selected.job?._id || "—"}
               </div>
+
+              {/* ✅ FIX: selected.createdAt might be missing */}
               <div>
-                <strong>Date:</strong> {new Date(selected.createdAt).toLocaleString()}
+                <strong>Date:</strong>{" "}
+                {selected.createdAt ? new Date(selected.createdAt).toLocaleString() : "—"}
               </div>
             </div>
           ) : (
