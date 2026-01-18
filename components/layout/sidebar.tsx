@@ -18,6 +18,7 @@ import {
   Lock,
   Settings,
   MapPin,
+  MessagesSquare, // ✅ NEW: Chats icon
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -34,6 +35,9 @@ const navItems = [
 
   // ✅ Ratings link
   { label: "Ratings", href: "/dashboard/support/ratings", icon: Star },
+
+  // ✅ NEW: Chats (Admin)
+  { label: "Chats", href: "/dashboard/chats", icon: MessagesSquare },
 
   { label: "Notifications", href: "/dashboard/notifications", icon: Bell },
   { label: "Safety & Security", href: "/dashboard/safety", icon: ShieldCheck },
