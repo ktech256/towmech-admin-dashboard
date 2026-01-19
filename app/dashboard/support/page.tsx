@@ -1,7 +1,7 @@
+// app/dashboard/support/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 
 import { ModuleHeader } from "@/components/dashboard/module-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 import {
   Table,
@@ -71,6 +72,10 @@ export default function SupportPage() {
   const [priorityFilter, setPriorityFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
 
+  // ✅ Admin reply note (single note supported by backend right now)
+  const [adminNoteDraft, setAdminNoteDraft] = useState("");
+  const [savingNote, setSavingNote] = useState(false);
+
   const loadTickets = async () => {
     setLoading(true);
 
@@ -91,6 +96,7 @@ export default function SupportPage() {
 
   useEffect(() => {
     loadTickets();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, typeFilter, priorityFilter]);
 
   const filteredTickets = useMemo(() => {
@@ -112,13 +118,15 @@ export default function SupportPage() {
       return <Badge className="bg-blue-600">IN PROGRESS</Badge>;
     if (status === "RESOLVED")
       return <Badge className="bg-green-600">RESOLVED</Badge>;
-    if (status === "CLOSED") return <Badge className="bg-slate-700">CLOSED</Badge>;
+    if (status === "CLOSED")
+      return <Badge className="bg-slate-700">CLOSED</Badge>;
     return <Badge variant="secondary">{status}</Badge>;
   };
 
   const getPriorityBadge = (priority: string) => {
     if (priority === "LOW") return <Badge variant="outline">LOW</Badge>;
-    if (priority === "MEDIUM") return <Badge className="bg-slate-500">MEDIUM</Badge>;
+    if (priority === "MEDIUM")
+      return <Badge className="bg-slate-500">MEDIUM</Badge>;
     if (priority === "HIGH") return <Badge className="bg-orange-600">HIGH</Badge>;
     if (priority === "URGENT") return <Badge className="bg-red-600">URGENT</Badge>;
     return <Badge variant="secondary">{priority}</Badge>;
@@ -147,6 +155,42 @@ export default function SupportPage() {
       alert(err?.response?.data?.message || "Update failed ❌");
     } finally {
       setActionLoadingId(null);
+    }
+  };
+
+  const openTicket = (t: Ticket) => {
+    setSelected(t);
+    setAdminNoteDraft(t.adminNote || "");
+  };
+
+  const closeTicket = () => {
+    setSelected(null);
+    setAdminNoteDraft("");
+    setSavingNote(false);
+  };
+
+  const handleSaveAdminNote = async () => {
+    if (!selected) return;
+
+    setSavingNote(true);
+    try {
+      await updateTicket(selected._id, {
+        adminNote: adminNoteDraft,
+        // optional: you can also auto-move to IN_PROGRESS when admin replies
+        status: selected.status === "OPEN" ? "IN_PROGRESS" : undefined,
+      });
+
+      await loadTickets();
+
+      // refresh selected from latest list
+      const updated = tickets.find((t) => t._id === selected._id);
+      setSelected(updated || selected);
+
+      alert("Reply saved ✅");
+    } catch (err: any) {
+      alert(err?.response?.data?.message || "Failed to save reply ❌");
+    } finally {
+      setSavingNote(false);
     }
   };
 
@@ -234,7 +278,10 @@ export default function SupportPage() {
                 <TableBody>
                   {filteredTickets.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-sm text-muted-foreground">
+                      <TableCell
+                        colSpan={7}
+                        className="text-center py-8 text-sm text-muted-foreground"
+                      >
                         No tickets found ✅
                       </TableCell>
                     </TableRow>
@@ -253,9 +300,15 @@ export default function SupportPage() {
                         </TableCell>
                         <TableCell>{getPriorityBadge(t.priority)}</TableCell>
                         <TableCell>{getStatusBadge(t.status)}</TableCell>
-                        <TableCell>{new Date(t.createdAt).toLocaleDateString()}</TableCell>
+                        <TableCell>
+                          {new Date(t.createdAt).toLocaleDateString()}
+                        </TableCell>
                         <TableCell className="text-right space-x-2">
-                          <Button size="sm" variant="outline" onClick={() => setSelected(t)}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openTicket(t)}
+                          >
                             View
                           </Button>
 
@@ -291,40 +344,85 @@ export default function SupportPage() {
       </Card>
 
       {/* ✅ Modal */}
-      <Dialog open={!!selected} onOpenChange={() => setSelected(null)}>
+      <Dialog open={!!selected} onOpenChange={(open) => (!open ? closeTicket() : null)}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Ticket Details</DialogTitle>
           </DialogHeader>
 
           {selected && (
-            <div className="space-y-4 text-sm">
+            <div className="space-y-5 text-sm">
               <div>
                 <strong>Subject:</strong> {selected.subject}
               </div>
+
               <div>
                 <strong>Message:</strong>
                 <div className="mt-2 rounded-md border bg-slate-50 p-3">
                   {selected.message}
                 </div>
               </div>
-              <div>
-                <strong>Status:</strong> {selected.status}
+
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                <div>
+                  <strong>Status:</strong> {selected.status}{" "}
+                  <span className="ml-2">{getStatusBadge(selected.status)}</span>
+                </div>
+                <div>
+                  <strong>Priority:</strong> {selected.priority}{" "}
+                  <span className="ml-2">{getPriorityBadge(selected.priority)}</span>
+                </div>
+                <div>
+                  <strong>Type:</strong> <Badge variant="secondary">{selected.type}</Badge>
+                </div>
+                <div>
+                  <strong>Date:</strong>{" "}
+                  {new Date(selected.createdAt).toLocaleString()}
+                </div>
               </div>
+
               <div>
-                <strong>Type:</strong> {selected.type}
+                <strong>Customer:</strong> {selected.createdBy?.name} (
+                {selected.createdBy?.email})
               </div>
-              <div>
-                <strong>Priority:</strong> {selected.priority}
-              </div>
-              <div>
-                <strong>Customer:</strong> {selected.createdBy?.name} ({selected.createdBy?.email})
-              </div>
+
               <div>
                 <strong>Assigned To:</strong>{" "}
                 {selected.assignedTo?.name
                   ? `${selected.assignedTo.name} (${selected.assignedTo.email})`
                   : "Not assigned"}
+              </div>
+
+              {/* ✅ Admin Reply (adminNote) */}
+              <div className="space-y-2">
+                <strong>Admin Reply:</strong>
+                <Textarea
+                  value={adminNoteDraft}
+                  onChange={(e) => setAdminNoteDraft(e.target.value)}
+                  placeholder="Type your reply to the customer..."
+                  className="min-h-[120px]"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleSaveAdminNote}
+                    disabled={savingNote}
+                  >
+                    {savingNote ? "Saving..." : "Save Reply"}
+                  </Button>
+
+                  {selected.status !== "RESOLVED" && (
+                    <Button
+                      variant="secondary"
+                      disabled={savingNote}
+                      onClick={() => handleStatusUpdate(selected._id, "RESOLVED")}
+                    >
+                      Mark Resolved
+                    </Button>
+                  )}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Note: This is a single reply field (adminNote). Threaded chat needs backend update.
+                </div>
               </div>
 
               {/* ✅ Audit Logs */}

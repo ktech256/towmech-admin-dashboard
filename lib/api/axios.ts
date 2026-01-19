@@ -11,12 +11,13 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
-  // ✅ This prevents "localStorage is not defined" during Render build
+  // ✅ prevents "localStorage is not defined" during build/SSR
   if (typeof window !== "undefined") {
     const token =
       localStorage.getItem("adminToken") || localStorage.getItem("token");
 
     if (token) {
+      config.headers = config.headers || {};
       config.headers.Authorization = `Bearer ${token}`;
     }
   }
