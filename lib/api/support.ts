@@ -28,11 +28,17 @@ export async function updateTicket(
   return res.data;
 }
 
-// ✅ NEW: fetch single ticket (to refresh modal after saving reply)
+// ✅ NEW: fetch single ticket (includes thread messages)
 export async function fetchAdminTicketById(ticketId: string) {
-  // backend does not currently expose /api/admin/support/tickets/:id
-  // so we fetch all and pick one (safe fallback; no backend changes)
-  const data = await fetchAdminTickets();
-  const tickets = data?.tickets || [];
-  return tickets.find((t: any) => t?._id === ticketId) || null;
+  const res = await api.get(`/api/admin/support/tickets/${ticketId}`);
+  return res.data; // { ticket }
+}
+
+// ✅ NEW: admin reply to ticket thread
+// Body must contain ONLY: { message: "..." }
+export async function replyAdminToTicket(ticketId: string, message: string) {
+  const res = await api.post(`/api/admin/support/tickets/${ticketId}/reply`, {
+    message,
+  });
+  return res.data; // { message, ticket }
 }
