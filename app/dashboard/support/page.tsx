@@ -27,12 +27,30 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-import { fetchAdminTickets, assignTicket, updateTicket } from "@/lib/api/support";
+import {
+  fetchAdminTickets,
+  assignTicket,
+  updateTicket,
+  fetchAdminTicketById,
+  replyAdminToTicket,
+} from "@/lib/api/support";
+
+type TicketMessage = {
+  _id?: string;
+  message: string;
+  senderRole?: string;
+  senderId?: {
+    name?: string;
+    email?: string;
+    role?: string;
+  };
+  createdAt?: string;
+};
 
 type Ticket = {
   _id: string;
   subject: string;
-  message: string;
+  message: string; // initial opener
   type: string;
   priority: string;
   status: string;
@@ -52,6 +70,8 @@ type Ticket = {
 
   adminNote?: string;
 
+  messages?: TicketMessage[]; // ✅ NEW threaded replies
+
   auditLogs?: {
     action: string;
     timestamp: string;
@@ -65,32 +85,45 @@ export default function SupportPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Ticket | null>(null);
+  const [selectedLoading, setSelectedLoading] = useState(false);
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
 
-  // ✅ Admin reply note (single note supported by backend right now)
-  const [adminNoteDraft, setAdminNoteDraft] = useState("");
-  const [savingNote, setSavingNote] = useState(false);
+  // ✅ Reply draft (thread)
+  const [replyDraft, setReplyDraft] = useState("");
+  const [sendingReply, setSendingReply] = useState(false);
 
   const loadTickets = async () => {
     setLoading(true);
-
     try {
       const data = await fetchAdminTickets({
         status: statusFilter || undefined,
         type: typeFilter || undefined,
         priority: priorityFilter || undefined,
       });
-
       setTickets(data?.tickets || []);
-    } catch (err) {
+    } catch {
       alert("Failed to load support tickets ❌");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadSelectedTicket = async (ticketId: string) => {
+    setSelectedLoading(true);
+    try {
+      const res = await fetchAdminTicketById(ticketId); // { ticket }
+      setSelected(res?.ticket || null);
+    } catch (err: any) {
+      alert(err?.response?.data?.message || "Failed to load ticket ❌");
+      setSelected(null);
+    } finally {
+      setSelectedLoading(false);
     }
   };
 
@@ -104,7 +137,7 @@ export default function SupportPage() {
     const s = search.toLowerCase();
     return tickets.filter((t) => {
       return (
-        t.subject.toLowerCase().includes(s) ||
+        (t.subject || "").toLowerCase().includes(s) ||
         (t.createdBy?.name || "").toLowerCase().includes(s) ||
         (t.createdBy?.email || "").toLowerCase().includes(s) ||
         (t.type || "").toLowerCase().includes(s)
@@ -114,19 +147,15 @@ export default function SupportPage() {
 
   const getStatusBadge = (status: string) => {
     if (status === "OPEN") return <Badge className="bg-yellow-600">OPEN</Badge>;
-    if (status === "IN_PROGRESS")
-      return <Badge className="bg-blue-600">IN PROGRESS</Badge>;
-    if (status === "RESOLVED")
-      return <Badge className="bg-green-600">RESOLVED</Badge>;
-    if (status === "CLOSED")
-      return <Badge className="bg-slate-700">CLOSED</Badge>;
+    if (status === "IN_PROGRESS") return <Badge className="bg-blue-600">IN PROGRESS</Badge>;
+    if (status === "RESOLVED") return <Badge className="bg-green-600">RESOLVED</Badge>;
+    if (status === "CLOSED") return <Badge className="bg-slate-700">CLOSED</Badge>;
     return <Badge variant="secondary">{status}</Badge>;
   };
 
   const getPriorityBadge = (priority: string) => {
     if (priority === "LOW") return <Badge variant="outline">LOW</Badge>;
-    if (priority === "MEDIUM")
-      return <Badge className="bg-slate-500">MEDIUM</Badge>;
+    if (priority === "MEDIUM") return <Badge className="bg-slate-500">MEDIUM</Badge>;
     if (priority === "HIGH") return <Badge className="bg-orange-600">HIGH</Badge>;
     if (priority === "URGENT") return <Badge className="bg-red-600">URGENT</Badge>;
     return <Badge variant="secondary">{priority}</Badge>;
@@ -137,6 +166,10 @@ export default function SupportPage() {
     try {
       await assignTicket(ticketId);
       await loadTickets();
+
+      // refresh modal if open
+      if (selectedId === ticketId) await loadSelectedTicket(ticketId);
+
       alert("Ticket assigned ✅");
     } catch (err: any) {
       alert(err?.response?.data?.message || "Assign failed ❌");
@@ -150,6 +183,10 @@ export default function SupportPage() {
     try {
       await updateTicket(ticketId, { status });
       await loadTickets();
+
+      // refresh modal if open
+      if (selectedId === ticketId) await loadSelectedTicket(ticketId);
+
       alert("Ticket updated ✅");
     } catch (err: any) {
       alert(err?.response?.data?.message || "Update failed ❌");
@@ -158,41 +195,69 @@ export default function SupportPage() {
     }
   };
 
-  const openTicket = (t: Ticket) => {
-    setSelected(t);
-    setAdminNoteDraft(t.adminNote || "");
+  const openTicket = async (t: Ticket) => {
+    setSelectedId(t._id);
+    setSelected(null);
+    setReplyDraft("");
+    await loadSelectedTicket(t._id);
   };
 
   const closeTicket = () => {
+    setSelectedId(null);
     setSelected(null);
-    setAdminNoteDraft("");
-    setSavingNote(false);
+    setReplyDraft("");
+    setSendingReply(false);
   };
 
-  const handleSaveAdminNote = async () => {
-    if (!selected) return;
+  const handleSendReply = async () => {
+    if (!selected?._id) return;
 
-    setSavingNote(true);
+    const msg = replyDraft.trim();
+    if (!msg) {
+      alert("Reply message is required ❌");
+      return;
+    }
+
+    setSendingReply(true);
     try {
-      await updateTicket(selected._id, {
-        adminNote: adminNoteDraft,
-        // optional: you can also auto-move to IN_PROGRESS when admin replies
-        status: selected.status === "OPEN" ? "IN_PROGRESS" : undefined,
-      });
+      await replyAdminToTicket(selected._id, msg);
 
+      setReplyDraft("");
+
+      // refresh modal thread
+      await loadSelectedTicket(selected._id);
+
+      // refresh list (status might auto-change to IN_PROGRESS)
       await loadTickets();
 
-      // refresh selected from latest list
-      const updated = tickets.find((t) => t._id === selected._id);
-      setSelected(updated || selected);
-
-      alert("Reply saved ✅");
+      alert("Reply sent ✅");
     } catch (err: any) {
-      alert(err?.response?.data?.message || "Failed to save reply ❌");
+      alert(err?.response?.data?.message || "Failed to send reply ❌");
     } finally {
-      setSavingNote(false);
+      setSendingReply(false);
     }
   };
+
+  // Build a single timeline: opener + thread replies
+  const threadItems = useMemo(() => {
+    if (!selected) return [];
+    const opener: TicketMessage = {
+      message: selected.message,
+      senderRole: selected.createdBy?.role || "CUSTOMER",
+      senderId: selected.createdBy
+        ? { name: selected.createdBy.name, email: selected.createdBy.email, role: selected.createdBy.role }
+        : undefined,
+      createdAt: selected.createdAt,
+    };
+
+    const replies = Array.isArray(selected.messages) ? selected.messages : [];
+
+    return [opener, ...replies].sort((a, b) => {
+      const ta = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const tb = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return ta - tb;
+    });
+  }, [selected]);
 
   return (
     <div className="space-y-6">
@@ -278,10 +343,7 @@ export default function SupportPage() {
                 <TableBody>
                   {filteredTickets.length === 0 ? (
                     <TableRow>
-                      <TableCell
-                        colSpan={7}
-                        className="text-center py-8 text-sm text-muted-foreground"
-                      >
+                      <TableCell colSpan={7} className="text-center py-8 text-sm text-muted-foreground">
                         No tickets found ✅
                       </TableCell>
                     </TableRow>
@@ -300,15 +362,9 @@ export default function SupportPage() {
                         </TableCell>
                         <TableCell>{getPriorityBadge(t.priority)}</TableCell>
                         <TableCell>{getStatusBadge(t.status)}</TableCell>
-                        <TableCell>
-                          {new Date(t.createdAt).toLocaleDateString()}
-                        </TableCell>
+                        <TableCell>{new Date(t.createdAt).toLocaleDateString()}</TableCell>
                         <TableCell className="text-right space-x-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => openTicket(t)}
-                          >
+                          <Button size="sm" variant="outline" onClick={() => openTicket(t)}>
                             View
                           </Button>
 
@@ -344,90 +400,108 @@ export default function SupportPage() {
       </Card>
 
       {/* ✅ Modal */}
-      <Dialog open={!!selected} onOpenChange={(open) => (!open ? closeTicket() : null)}>
-        <DialogContent className="max-w-2xl">
+      <Dialog open={!!selectedId} onOpenChange={(open) => (!open ? closeTicket() : null)}>
+        <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Ticket Details</DialogTitle>
           </DialogHeader>
 
-          {selected && (
+          {selectedLoading ? (
+            <div className="py-10 text-center text-sm text-muted-foreground">
+              Loading ticket...
+            </div>
+          ) : !selected ? (
+            <div className="py-10 text-center text-sm text-muted-foreground">
+              Ticket not available.
+            </div>
+          ) : (
             <div className="space-y-5 text-sm">
-              <div>
-                <strong>Subject:</strong> {selected.subject}
+              <div className="flex flex-wrap gap-2 items-center">
+                <div className="font-semibold">{selected.subject}</div>
+                <div>{getStatusBadge(selected.status)}</div>
+                <div>{getPriorityBadge(selected.priority)}</div>
+                <Badge variant="secondary">{selected.type}</Badge>
               </div>
 
-              <div>
-                <strong>Message:</strong>
-                <div className="mt-2 rounded-md border bg-slate-50 p-3">
-                  {selected.message}
-                </div>
+              <div className="text-xs text-muted-foreground">
+                Created: {new Date(selected.createdAt).toLocaleString()} • Customer:{" "}
+                {selected.createdBy?.name} ({selected.createdBy?.email})
               </div>
 
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                <div>
-                  <strong>Status:</strong> {selected.status}{" "}
-                  <span className="ml-2">{getStatusBadge(selected.status)}</span>
-                </div>
-                <div>
-                  <strong>Priority:</strong> {selected.priority}{" "}
-                  <span className="ml-2">{getPriorityBadge(selected.priority)}</span>
-                </div>
-                <div>
-                  <strong>Type:</strong> <Badge variant="secondary">{selected.type}</Badge>
-                </div>
-                <div>
-                  <strong>Date:</strong>{" "}
-                  {new Date(selected.createdAt).toLocaleString()}
-                </div>
-              </div>
-
-              <div>
-                <strong>Customer:</strong> {selected.createdBy?.name} (
-                {selected.createdBy?.email})
-              </div>
-
-              <div>
-                <strong>Assigned To:</strong>{" "}
+              <div className="text-xs text-muted-foreground">
+                Assigned To:{" "}
                 {selected.assignedTo?.name
                   ? `${selected.assignedTo.name} (${selected.assignedTo.email})`
                   : "Not assigned"}
               </div>
 
-              {/* ✅ Admin Reply (adminNote) */}
+              {/* ✅ Thread */}
               <div className="space-y-2">
-                <strong>Admin Reply:</strong>
+                <div className="font-semibold">Conversation</div>
+                <div className="max-h-[320px] overflow-auto rounded-md border bg-slate-50 p-3 space-y-3">
+                  {threadItems.length === 0 ? (
+                    <div className="text-xs text-muted-foreground">No messages.</div>
+                  ) : (
+                    threadItems.map((m, idx) => {
+                      const who =
+                        m?.senderId?.name ||
+                        (m?.senderRole ? m.senderRole : "USER");
+                      const when = m?.createdAt
+                        ? new Date(m.createdAt).toLocaleString()
+                        : "";
+                      return (
+                        <div key={m._id || idx} className="rounded-md bg-white border p-3">
+                          <div className="flex justify-between gap-2 text-xs text-slate-600">
+                            <div className="font-medium">{who}</div>
+                            <div>{when}</div>
+                          </div>
+                          <div className="mt-2 whitespace-pre-wrap">{m.message}</div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* ✅ Reply box */}
+              <div className="space-y-2">
+                <div className="font-semibold">Reply</div>
                 <Textarea
-                  value={adminNoteDraft}
-                  onChange={(e) => setAdminNoteDraft(e.target.value)}
-                  placeholder="Type your reply to the customer..."
+                  value={replyDraft}
+                  onChange={(e) => setReplyDraft(e.target.value)}
+                  placeholder="Type your reply…"
                   className="min-h-[120px]"
                 />
-                <div className="flex gap-2">
-                  <Button
-                    onClick={handleSaveAdminNote}
-                    disabled={savingNote}
-                  >
-                    {savingNote ? "Saving..." : "Save Reply"}
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={handleSendReply} disabled={sendingReply}>
+                    {sendingReply ? "Sending..." : "Send Reply"}
                   </Button>
+
+                  {selected.status === "OPEN" && (
+                    <Button
+                      variant="secondary"
+                      disabled={sendingReply}
+                      onClick={() => handleAssignToMe(selected._id)}
+                    >
+                      Assign to me
+                    </Button>
+                  )}
 
                   {selected.status !== "RESOLVED" && (
                     <Button
                       variant="secondary"
-                      disabled={savingNote}
+                      disabled={sendingReply}
                       onClick={() => handleStatusUpdate(selected._id, "RESOLVED")}
                     >
                       Mark Resolved
                     </Button>
                   )}
                 </div>
-                <div className="text-xs text-muted-foreground">
-                  Note: This is a single reply field (adminNote). Threaded chat needs backend update.
-                </div>
               </div>
 
               {/* ✅ Audit Logs */}
               <div>
-                <strong>Audit Logs:</strong>
+                <div className="font-semibold">Audit Logs</div>
                 <div className="mt-2 space-y-2 rounded-md border bg-slate-50 p-3">
                   {selected.auditLogs?.length ? (
                     selected.auditLogs.map((log, i) => (
