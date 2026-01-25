@@ -20,12 +20,28 @@ function saveAdminToken(token?: string) {
   localStorage.setItem("token", token);
 }
 
+/**
+ * Builds a safe path that works with either:
+ *   baseURL = https://api.towmech.com
+ * or
+ *   baseURL = https://api.towmech.com/api
+ *
+ * If baseURL already ends with /api, we don't add it again.
+ */
+function withApiPrefix(path: string) {
+  const base = (api.defaults.baseURL || "").replace(/\/$/, "");
+  const alreadyHasApi =
+    base.endsWith("/api") || base.includes("/api/");
+
+  return `${alreadyHasApi ? "" : "/api"}${path.startsWith("/") ? "" : "/"}${path}`;
+}
+
 export async function loginWithPhonePassword(payload: {
   phone: string;
   password: string;
 }) {
-  // baseURL includes /api, so DON'T include /api again
-  const res = await api.post<LoginResponse>("/auth/login", payload);
+  const url = withApiPrefix("/auth/login");
+  const res = await api.post<LoginResponse>(url, payload);
 
   // If backend ever returns token directly, save it
   saveAdminToken(res.data?.token);
@@ -34,7 +50,8 @@ export async function loginWithPhonePassword(payload: {
 }
 
 export async function verifyOtp(payload: { phone: string; otp: string }) {
-  const res = await api.post<LoginResponse>("/auth/verify-otp", payload);
+  const url = withApiPrefix("/auth/verify-otp");
+  const res = await api.post<LoginResponse>(url, payload);
 
   // ✅ OTP verify returns token -> save it
   saveAdminToken(res.data?.token);
