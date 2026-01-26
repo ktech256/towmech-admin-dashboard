@@ -52,28 +52,17 @@ type AdminUser = {
 };
 
 const PERMISSION_KEYS = [
-  // ✅ ✅ ✅ NEW OVERVIEW PERMISSION
   { key: "canViewOverview", label: "View Overview Dashboard" },
-
   { key: "canVerifyProviders", label: "Verify Providers" },
   { key: "canApprovePayments", label: "Approve Payments" },
   { key: "canRefundPayments", label: "Refund Payments" },
   { key: "canManageUsers", label: "Manage Users" },
   { key: "canManageJobs", label: "Manage Jobs" },
   { key: "canBroadcastNotifications", label: "Broadcast Notifications" },
-
-  // ✅ SAFETY PERMISSION
   { key: "canManageSafety", label: "Manage Safety Incidents" },
-
-  // ✅ SETTINGS PERMISSION
   { key: "canManageSettings", label: "Manage System Settings" },
-
-  // ✅ ZONES PERMISSION
   { key: "canManageZones", label: "Manage Zones" },
-
-  // ✅ SERVICE CATEGORIES PERMISSION
   { key: "canManageServiceCategories", label: "Manage Service Categories" },
-
   { key: "canViewAnalytics", label: "View Analytics" },
   { key: "canManagePricing", label: "Manage Pricing" },
 ];
@@ -96,6 +85,7 @@ export default function RolesPage() {
   // ✅ Create Admin Form
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState(""); // ✅ NEW
   const [password, setPassword] = useState("");
 
   const [role, setRole] = useState<"Admin" | "SuperAdmin">("Admin");
@@ -196,8 +186,8 @@ export default function RolesPage() {
   };
 
   const handleCreateAdmin = async () => {
-    if (!name || !email || !password) {
-      alert("Name, email and password are required ❌");
+    if (!name || !email || !password || !phone) {
+      alert("Name, email, phone and password are required ❌");
       return;
     }
 
@@ -205,6 +195,7 @@ export default function RolesPage() {
       await createAdmin({
         name,
         email,
+        phone, // ✅ NEW
         password,
         role,
         permissions: createPermissions,
@@ -214,6 +205,7 @@ export default function RolesPage() {
 
       setName("");
       setEmail("");
+      setPhone(""); // ✅ NEW
       setPassword("");
       setRole("Admin");
       setCreatePermissions({});
@@ -222,8 +214,6 @@ export default function RolesPage() {
       await loadAdmins();
     } catch (err: any) {
       console.log("CREATE ADMIN ERROR:", err);
-
-      // ✅ ✅ ✅ THIS IS THE MAIN FIX
       alert(err?.message || "Could not create admin ❌");
     }
   };
@@ -388,6 +378,11 @@ export default function RolesPage() {
               placeholder="Email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+            />
+            <Input
+              placeholder="Phone (e.g. 071..., +27...)"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
             />
             <Input
               placeholder="Password"

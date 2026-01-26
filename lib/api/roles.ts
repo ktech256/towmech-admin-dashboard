@@ -18,6 +18,7 @@ export async function fetchAdmins() {
 export async function createAdmin(payload: {
   name: string;
   email: string;
+  phone: string; // ✅ NEW (required)
   password: string;
   role?: string;
   permissions?: Record<string, boolean>;
