@@ -30,9 +30,7 @@ function saveAdminToken(token?: string) {
  */
 function withApiPrefix(path: string) {
   const base = (api.defaults.baseURL || "").replace(/\/$/, "");
-  const alreadyHasApi =
-    base.endsWith("/api") || base.includes("/api/");
-
+  const alreadyHasApi = base.endsWith("/api") || base.includes("/api/");
   return `${alreadyHasApi ? "" : "/api"}${path.startsWith("/") ? "" : "/"}${path}`;
 }
 
@@ -56,6 +54,33 @@ export async function verifyOtp(payload: { phone: string; otp: string }) {
   // ✅ OTP verify returns token -> save it
   saveAdminToken(res.data?.token);
 
+  return res.data;
+}
+
+/**
+ * ✅ Forgot Password (phone) → sends OTP via SMS
+ * POST /api/auth/forgot-password
+ */
+export async function forgotPassword(payload: { phone: string }) {
+  const url = withApiPrefix("/auth/forgot-password");
+  const res = await api.post<{ message?: string; requiresOtp?: boolean; otp?: string }>(
+    url,
+    payload
+  );
+  return res.data;
+}
+
+/**
+ * ✅ Reset Password (phone + otp + newPassword)
+ * POST /api/auth/reset-password
+ */
+export async function resetPassword(payload: {
+  phone: string;
+  otp: string;
+  newPassword: string;
+}) {
+  const url = withApiPrefix("/auth/reset-password");
+  const res = await api.post<{ message?: string }>(url, payload);
   return res.data;
 }
 
