@@ -1,5 +1,6 @@
 // lib/api/axios.ts
 import axios from "axios";
+import { countryStore } from "@/lib/store/countryStore";
 
 const RAW_API_BASE =
   process.env.NEXT_PUBLIC_API_URL ||
@@ -13,7 +14,9 @@ const RAW_API_BASE =
  * - If env has trailing slash -> it is removed
  */
 function buildApiBaseUrl(input: string) {
-  const trimmed = String(input || "").trim().replace(/\/+$/, ""); // remove trailing slashes
+  const trimmed = String(input || "")
+    .trim()
+    .replace(/\/+$/, ""); // remove trailing slashes
 
   // If already ends with /api (or /api/), keep it.
   if (trimmed.toLowerCase().endsWith("/api")) return trimmed;
@@ -45,6 +48,13 @@ api.interceptors.request.use((config) => {
     if (token) {
       config.headers = config.headers || {};
       config.headers.Authorization = `Bearer ${token}`;
+    }
+
+    // ✅ Multi-country routing header
+    const countryCode = countryStore.getCountry();
+    if (countryCode) {
+      config.headers = config.headers || {};
+      config.headers["X-COUNTRY-CODE"] = countryCode;
     }
   }
 

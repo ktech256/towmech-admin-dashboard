@@ -28,6 +28,7 @@ import {
   refundPayment,
   markPaymentPaid,
 } from "@/lib/api/payments";
+import { useCountryStore } from "@/lib/store/countryStore";
 
 type Payment = {
   _id: string;
@@ -72,12 +73,22 @@ export default function PaymentsPage() {
 
   const [selected, setSelected] = useState<Payment | null>(null);
 
+  // ✅ multi-country scope
+  const { countryCode } = useCountryStore();
+
   const loadPayments = async () => {
+    if (!countryCode) {
+      setPayments([]);
+      setLoading(false);
+      setError("Please select a country first.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
       const data = await fetchAdminPayments();
-      setPayments(data?.payments || []);
+      setPayments(data?.payments || data?.data || []);
     } catch (err: any) {
       setError(err?.response?.data?.message || "Failed to load payments");
     } finally {
@@ -87,7 +98,8 @@ export default function PaymentsPage() {
 
   useEffect(() => {
     loadPayments();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countryCode]);
 
   const filtered = useMemo(() => {
     if (!search) return payments;
@@ -168,6 +180,14 @@ export default function PaymentsPage() {
     }
   };
 
+  // ✅ Use the currency that actually exists in this country’s data
+  const displayCurrency = useMemo(() => {
+    return (
+      payments.find((p) => p.currency && String(p.currency).trim())?.currency ||
+      "—"
+    );
+  }, [payments]);
+
   return (
     <div className="space-y-6">
       <ModuleHeader
@@ -196,7 +216,7 @@ export default function PaymentsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold">
-              {totals.totalPaid.toLocaleString()} ZAR
+              {totals.totalPaid.toLocaleString()} {displayCurrency}
             </div>
           </CardContent>
         </Card>
@@ -283,7 +303,7 @@ export default function PaymentsPage() {
                         </TableCell>
 
                         <TableCell>
-                          {p.amount?.toLocaleString()} {p.currency || "ZAR"}
+                          {p.amount?.toLocaleString()} {p.currency || "—"}
                         </TableCell>
 
                         <TableCell>{getStatusBadge(p.status)}</TableCell>
@@ -310,9 +330,7 @@ export default function PaymentsPage() {
                             <Button
                               size="sm"
                               disabled={actionLoadingId === p._id}
-                              onClick={() =>
-                                handleMarkPaid(p.job?._id, p._id)
-                              }
+                              onClick={() => handleMarkPaid(p.job?._id, p._id)}
                             >
                               {actionLoadingId === p._id ? "..." : "Mark Paid"}
                             </Button>

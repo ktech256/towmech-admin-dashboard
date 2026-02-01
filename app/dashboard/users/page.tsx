@@ -16,6 +16,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 
 import { fetchUsers } from "@/lib/api/users";
+import { useCountryStore } from "@/lib/store/countryStore";
 
 type User = {
   _id: string;
@@ -35,8 +36,19 @@ export default function UsersPage() {
 
   const [search, setSearch] = useState("");
 
+  // ✅ country scoping (multi-country)
+  const { countryCode } = useCountryStore();
+
   useEffect(() => {
     const loadUsers = async () => {
+      // if no country selected yet, don't load (prevents mixed data)
+      if (!countryCode) {
+        setUsers([]);
+        setLoading(false);
+        setError("Please select a country first.");
+        return;
+      }
+
       setLoading(true);
       setError(null);
 
@@ -58,7 +70,7 @@ export default function UsersPage() {
     };
 
     loadUsers();
-  }, []);
+  }, [countryCode]);
 
   const filteredUsers = useMemo(() => {
     if (!search) return users;

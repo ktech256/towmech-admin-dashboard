@@ -18,6 +18,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+import { useCountryStore } from "@/lib/store/countryStore";
+
 import {
   fetchZones,
   createZone,
@@ -44,7 +46,16 @@ export default function ZonesPage() {
   const [description, setDescription] = useState("");
   const [creating, setCreating] = useState(false);
 
+  // ✅ multi-country scope
+  const { countryCode } = useCountryStore();
+
   const loadZones = async () => {
+    if (!countryCode) {
+      setZones([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
       const data = await fetchZones();
@@ -58,7 +69,8 @@ export default function ZonesPage() {
 
   useEffect(() => {
     loadZones();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countryCode]);
 
   const filteredZones = useMemo(() => {
     if (!search) return zones;
@@ -71,6 +83,11 @@ export default function ZonesPage() {
   }, [zones, search]);
 
   const handleCreate = async () => {
+    if (!countryCode) {
+      alert("Select a country first ❌");
+      return;
+    }
+
     if (!name.trim()) {
       alert("Zone name is required ❌");
       return;
@@ -91,6 +108,11 @@ export default function ZonesPage() {
   };
 
   const handleToggle = async (zone: Zone) => {
+    if (!countryCode) {
+      alert("Select a country first ❌");
+      return;
+    }
+
     try {
       await updateZone(zone._id, { isActive: !zone.isActive });
       await loadZones();
@@ -100,6 +122,11 @@ export default function ZonesPage() {
   };
 
   const handleDelete = async (id: string) => {
+    if (!countryCode) {
+      alert("Select a country first ❌");
+      return;
+    }
+
     if (!confirm("Delete this zone? This cannot be undone ❌")) return;
 
     try {
@@ -110,6 +137,8 @@ export default function ZonesPage() {
       alert(err?.response?.data?.message || "Failed to delete zone ❌");
     }
   };
+
+  const disabled = !countryCode;
 
   return (
     <div className="space-y-6">
@@ -126,18 +155,22 @@ export default function ZonesPage() {
 
         <CardContent className="space-y-4">
           <Input
-            placeholder="Zone name (e.g Johannesburg CBD)"
+            placeholder={
+              disabled ? "Select a country first..." : "Zone name (e.g Johannesburg CBD)"
+            }
             value={name}
             onChange={(e) => setName(e.target.value)}
+            disabled={disabled}
           />
 
           <Input
-            placeholder="Optional description"
+            placeholder={disabled ? "Select a country first..." : "Optional description"}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
+            disabled={disabled}
           />
 
-          <Button disabled={creating} onClick={handleCreate}>
+          <Button disabled={creating || disabled} onClick={handleCreate}>
             {creating ? "Creating..." : "Create Zone ✅"}
           </Button>
         </CardContent>
@@ -150,14 +183,19 @@ export default function ZonesPage() {
 
           <Input
             className="max-w-sm"
-            placeholder="Search zones..."
+            placeholder={disabled ? "Select a country to view zones..." : "Search zones..."}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            disabled={disabled}
           />
         </CardHeader>
 
         <CardContent>
-          {loading ? (
+          {disabled ? (
+            <div className="py-10 text-center text-sm text-muted-foreground">
+              Select a country to view and manage zones.
+            </div>
+          ) : loading ? (
             <div className="py-10 text-center text-sm text-muted-foreground">
               Loading zones...
             </div>

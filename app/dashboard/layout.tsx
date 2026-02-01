@@ -2,6 +2,7 @@
 
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
+import CountrySwitcher from "@/components/country/country-switcher";
 
 export default function DashboardLayout({
   children,
@@ -10,7 +11,11 @@ export default function DashboardLayout({
 }) {
   return (
     <AuthGuard>
-      <DashboardShell>{children}</DashboardShell>
+      <DashboardShell
+        headerRight={<CountrySwitcher />}
+      >
+        {children}
+      </DashboardShell>
     </AuthGuard>
   );
 }

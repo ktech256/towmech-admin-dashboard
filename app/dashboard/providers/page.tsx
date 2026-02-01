@@ -5,7 +5,14 @@ import { useEffect, useMemo, useState } from "react";
 import { ModuleHeader } from "@/components/dashboard/module-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -18,12 +25,9 @@ import {
   fetchProviderVerification,
 } from "@/lib/api/providers";
 
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+
+import { useCountryStore } from "@/lib/store/countryStore";
 
 type Provider = {
   _id: string;
@@ -53,6 +57,9 @@ export default function ProvidersPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
+
+  // ✅ country scoping (multi-country)
+  const { countryCode } = useCountryStore();
 
   // ✅ modal state
   const [open, setOpen] = useState(false);
@@ -87,8 +94,17 @@ export default function ProvidersPage() {
   };
 
   useEffect(() => {
+    // if no country selected yet, don't load (prevents mixed data)
+    if (!countryCode) {
+      setProviders([]);
+      setLoading(false);
+      setError("Please select a country first.");
+      return;
+    }
+
     loadProviders(tab);
-  }, [tab]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, countryCode]);
 
   const filteredProviders = useMemo(() => {
     if (!search) return providers;
@@ -184,9 +200,7 @@ export default function ProvidersPage() {
       <button
         onClick={() => setTab(key)}
         className={`rounded-md px-4 py-2 text-sm font-medium transition ${
-          active
-            ? "bg-slate-900 text-white"
-            : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+          active ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
         }`}
       >
         {label}
@@ -229,16 +243,10 @@ export default function ProvidersPage() {
 
         <CardContent>
           {loading && (
-            <div className="py-10 text-center text-sm text-muted-foreground">
-              Loading providers...
-            </div>
+            <div className="py-10 text-center text-sm text-muted-foreground">Loading providers...</div>
           )}
 
-          {error && (
-            <div className="py-10 text-center text-sm text-red-600">
-              {error}
-            </div>
-          )}
+          {error && <div className="py-10 text-center text-sm text-red-600">{error}</div>}
 
           {!loading && !error && (
             <div className="rounded-md border">
@@ -278,9 +286,7 @@ export default function ProvidersPage() {
                         </TableCell>
 
                         <TableCell>
-                          <Badge variant="secondary">
-                            {p.providerProfile?.verificationStatus || "—"}
-                          </Badge>
+                          <Badge variant="secondary">{p.providerProfile?.verificationStatus || "—"}</Badge>
                         </TableCell>
 
                         <TableCell>
@@ -294,11 +300,7 @@ export default function ProvidersPage() {
 
                           {tab === "pending" && (
                             <>
-                              <Button
-                                size="sm"
-                                disabled={actionLoadingId === p._id}
-                                onClick={() => handleApprove(p._id)}
-                              >
+                              <Button size="sm" disabled={actionLoadingId === p._id} onClick={() => handleApprove(p._id)}>
                                 {actionLoadingId === p._id ? "..." : "Approve"}
                               </Button>
 
@@ -327,22 +329,14 @@ export default function ProvidersPage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>
-              Verification Documents - {selectedProvider?.name || "Provider"}
-            </DialogTitle>
+            <DialogTitle>Verification Documents - {selectedProvider?.name || "Provider"}</DialogTitle>
           </DialogHeader>
 
           {docsLoading && (
-            <div className="py-10 text-center text-sm text-muted-foreground">
-              Loading documents...
-            </div>
+            <div className="py-10 text-center text-sm text-muted-foreground">Loading documents...</div>
           )}
 
-          {docsError && (
-            <div className="py-10 text-center text-sm text-red-600">
-              {docsError}
-            </div>
-          )}
+          {docsError && <div className="py-10 text-center text-sm text-red-600">{docsError}</div>}
 
           {!docsLoading && !docsError && (
             <div className="space-y-4">

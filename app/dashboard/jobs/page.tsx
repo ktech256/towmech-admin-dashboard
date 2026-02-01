@@ -7,7 +7,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 import { fetchAllJobs, fetchJobById } from "@/lib/api/jobs";
 import {
@@ -16,6 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useCountryStore } from "@/lib/store/countryStore";
 
 type Job = {
   _id: string;
@@ -54,13 +62,23 @@ export default function JobsPage() {
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [detailsError, setDetailsError] = useState<string | null>(null);
 
+  // ✅ country scoping (multi-country)
+  const { countryCode } = useCountryStore();
+
   const loadJobs = async () => {
+    if (!countryCode) {
+      setJobs([]);
+      setLoading(false);
+      setError("Please select a country first.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
       const data = await fetchAllJobs();
-      setJobs(data?.jobs || []);
+      setJobs(data?.jobs || data?.data || []);
     } catch (err: any) {
       setError(err?.response?.data?.message || "Failed to load jobs");
     } finally {
@@ -70,14 +88,15 @@ export default function JobsPage() {
 
   useEffect(() => {
     loadJobs();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countryCode]);
 
   const filteredJobs = useMemo(() => {
     if (!search) return jobs;
     const s = search.toLowerCase();
     return jobs.filter((job) => {
       return (
-        job._id.toLowerCase().includes(s) ||
+        (job._id || "").toLowerCase().includes(s) ||
         (job.status || "").toLowerCase().includes(s) ||
         (job.roleNeeded || "").toLowerCase().includes(s) ||
         (job.customer?.name || "").toLowerCase().includes(s) ||
@@ -161,7 +180,10 @@ export default function JobsPage() {
                 <TableBody>
                   {filteredJobs.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-sm text-muted-foreground">
+                      <TableCell
+                        colSpan={7}
+                        className="text-center py-8 text-sm text-muted-foreground"
+                      >
                         No jobs found ✅
                       </TableCell>
                     </TableRow>
@@ -169,21 +191,23 @@ export default function JobsPage() {
                     filteredJobs.map((job) => (
                       <TableRow key={job._id}>
                         <TableCell className="font-medium">
-                          {job._id.slice(-8)}
+                          {job._id?.slice?.(-8) || job._id}
                         </TableCell>
                         <TableCell>{getStatusBadge(job.status)}</TableCell>
                         <TableCell>{job.customer?.name || "—"}</TableCell>
                         <TableCell>{job.assignedTo?.name || "—"}</TableCell>
                         <TableCell>
-                          <Badge variant="secondary">
-                            {job.roleNeeded || "—"}
-                          </Badge>
+                          <Badge variant="secondary">{job.roleNeeded || "—"}</Badge>
                         </TableCell>
                         <TableCell>
                           {job.createdAt ? new Date(job.createdAt).toLocaleString() : "—"}
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button size="sm" variant="outline" onClick={() => openJobModal(job._id)}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openJobModal(job._id)}
+                          >
                             View
                           </Button>
                         </TableCell>
@@ -219,32 +243,60 @@ export default function JobsPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="rounded-lg border p-3 space-y-1">
                   <div className="font-medium">Job Info</div>
-                  <div><b>ID:</b> {selectedJob._id}</div>
-                  <div><b>Status:</b> {selectedJob.status}</div>
-                  <div><b>Role Needed:</b> {selectedJob.roleNeeded}</div>
-                  <div><b>Distance:</b> {selectedJob.distance ?? "—"} km</div>
-                  <div><b>Estimated Fare:</b> {selectedJob.estimatedFare ?? "—"}</div>
+                  <div>
+                    <b>ID:</b> {selectedJob._id}
+                  </div>
+                  <div>
+                    <b>Status:</b> {selectedJob.status}
+                  </div>
+                  <div>
+                    <b>Role Needed:</b> {selectedJob.roleNeeded}
+                  </div>
+                  <div>
+                    <b>Distance:</b> {selectedJob.distance ?? "—"} km
+                  </div>
+                  <div>
+                    <b>Estimated Fare:</b> {selectedJob.estimatedFare ?? "—"}
+                  </div>
                 </div>
 
                 <div className="rounded-lg border p-3 space-y-1">
                   <div className="font-medium">Customer</div>
-                  <div><b>Name:</b> {selectedJob.customer?.name || "—"}</div>
-                  <div><b>Email:</b> {selectedJob.customer?.email || "—"}</div>
-                  <div><b>Phone:</b> {selectedJob.customer?.phone || "—"}</div>
+                  <div>
+                    <b>Name:</b> {selectedJob.customer?.name || "—"}
+                  </div>
+                  <div>
+                    <b>Email:</b> {selectedJob.customer?.email || "—"}
+                  </div>
+                  <div>
+                    <b>Phone:</b> {selectedJob.customer?.phone || "—"}
+                  </div>
                 </div>
 
                 <div className="rounded-lg border p-3 space-y-1">
                   <div className="font-medium">Assigned Provider</div>
-                  <div><b>Name:</b> {selectedJob.assignedTo?.name || "—"}</div>
-                  <div><b>Email:</b> {selectedJob.assignedTo?.email || "—"}</div>
-                  <div><b>Phone:</b> {selectedJob.assignedTo?.phone || "—"}</div>
-                  <div><b>Role:</b> {selectedJob.assignedTo?.role || "—"}</div>
+                  <div>
+                    <b>Name:</b> {selectedJob.assignedTo?.name || "—"}
+                  </div>
+                  <div>
+                    <b>Email:</b> {selectedJob.assignedTo?.email || "—"}
+                  </div>
+                  <div>
+                    <b>Phone:</b> {selectedJob.assignedTo?.phone || "—"}
+                  </div>
+                  <div>
+                    <b>Role:</b> {selectedJob.assignedTo?.role || "—"}
+                  </div>
                 </div>
 
                 <div className="rounded-lg border p-3 space-y-1">
                   <div className="font-medium">Locations</div>
-                  <div><b>Pickup:</b> {selectedJob.pickupAddress || "—"}</div>
-                  <div><b>Dropoff:</b> {selectedJob.dropoffAddress || "—"}</div>
+                  <div>
+                    <b>Pickup:</b> {selectedJob.pickupAddress || "—"}
+                  </div>
+                  <div>
+                    <b>Dropoff:</b> {selectedJob.dropoffAddress || "—"}
+                  </div>
                 </div>
               </div>
             </div>

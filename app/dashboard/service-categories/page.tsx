@@ -32,6 +32,8 @@ import {
   deleteServiceCategory,
 } from "@/lib/api/serviceCategories";
 
+import { useCountryStore } from "@/lib/store/countryStore";
+
 type ServiceCategory = {
   _id: string;
   name: string;
@@ -54,16 +56,29 @@ export default function ServiceCategoriesPage() {
   // ✅ Form state
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [providerType, setProviderType] = useState<"TOW_TRUCK" | "MECHANIC">("TOW_TRUCK");
+  const [providerType, setProviderType] = useState<"TOW_TRUCK" | "MECHANIC">(
+    "TOW_TRUCK"
+  );
   const [active, setActive] = useState(true);
 
+  // ✅ multi-country scope
+  const { countryCode } = useCountryStore();
+
   const loadCategories = async () => {
+    if (!countryCode) {
+      setCategories([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
       const data = await fetchServiceCategories();
       setCategories(data?.categories || []);
     } catch (err: any) {
-      alert(err?.response?.data?.message || "Failed to load service categories ❌");
+      alert(
+        err?.response?.data?.message || "Failed to load service categories ❌"
+      );
     } finally {
       setLoading(false);
     }
@@ -71,7 +86,8 @@ export default function ServiceCategoriesPage() {
 
   useEffect(() => {
     loadCategories();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countryCode]);
 
   const filtered = useMemo(() => {
     if (!search) return categories;
@@ -94,11 +110,19 @@ export default function ServiceCategoriesPage() {
   };
 
   const openCreate = () => {
+    if (!countryCode) {
+      alert("Select a country first ❌");
+      return;
+    }
     resetForm();
     setOpenModal(true);
   };
 
   const openEdit = (cat: ServiceCategory) => {
+    if (!countryCode) {
+      alert("Select a country first ❌");
+      return;
+    }
     setEditing(cat);
     setName(cat.name);
     setDescription(cat.description || "");
@@ -108,6 +132,11 @@ export default function ServiceCategoriesPage() {
   };
 
   const handleSave = async () => {
+    if (!countryCode) {
+      alert("Select a country first ❌");
+      return;
+    }
+
     if (!name.trim()) {
       alert("Name is required ❌");
       return;
@@ -138,7 +167,13 @@ export default function ServiceCategoriesPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this service category?")) return;
+    if (!countryCode) {
+      alert("Select a country first ❌");
+      return;
+    }
+
+    if (!confirm("Are you sure you want to delete this service category?"))
+      return;
 
     try {
       await deleteServiceCategory(id);
@@ -159,12 +194,19 @@ export default function ServiceCategoriesPage() {
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <Input
           className="max-w-sm"
-          placeholder="Search service categories..."
+          placeholder={
+            countryCode
+              ? "Search service categories..."
+              : "Select a country to view categories..."
+          }
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          disabled={!countryCode}
         />
 
-        <Button onClick={openCreate}>+ Add Service Category</Button>
+        <Button onClick={openCreate} disabled={!countryCode}>
+          + Add Service Category
+        </Button>
       </div>
 
       <Card>
@@ -173,7 +215,11 @@ export default function ServiceCategoriesPage() {
         </CardHeader>
 
         <CardContent>
-          {loading ? (
+          {!countryCode ? (
+            <div className="py-10 text-center text-sm text-muted-foreground">
+              Select a country to view and manage categories.
+            </div>
+          ) : loading ? (
             <div className="py-10 text-center text-sm text-muted-foreground">
               Loading service categories...
             </div>
@@ -194,7 +240,10 @@ export default function ServiceCategoriesPage() {
                 <TableBody>
                   {filtered.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8 text-sm text-muted-foreground">
+                      <TableCell
+                        colSpan={6}
+                        className="text-center py-8 text-sm text-muted-foreground"
+                      >
                         No service categories found ✅
                       </TableCell>
                     </TableRow>
@@ -207,7 +256,9 @@ export default function ServiceCategoriesPage() {
                         </TableCell>
                         <TableCell>
                           <Badge variant="secondary">
-                            {c.providerType === "TOW_TRUCK" ? "TowTruck" : "Mechanic"}
+                            {c.providerType === "TOW_TRUCK"
+                              ? "TowTruck"
+                              : "Mechanic"}
                           </Badge>
                         </TableCell>
                         <TableCell>
@@ -218,13 +269,23 @@ export default function ServiceCategoriesPage() {
                           )}
                         </TableCell>
                         <TableCell>
-                          {c.createdAt ? new Date(c.createdAt).toLocaleDateString() : "—"}
+                          {c.createdAt
+                            ? new Date(c.createdAt).toLocaleDateString()
+                            : "—"}
                         </TableCell>
                         <TableCell className="text-right space-x-2">
-                          <Button size="sm" variant="outline" onClick={() => openEdit(c)}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openEdit(c)}
+                          >
                             Edit
                           </Button>
-                          <Button size="sm" variant="destructive" onClick={() => handleDelete(c._id)}>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleDelete(c._id)}
+                          >
                             Delete
                           </Button>
                         </TableCell>

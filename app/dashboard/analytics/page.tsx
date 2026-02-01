@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { fetchAnalyticsSummary } from "@/lib/api/analytics";
 import { JobStatusChart } from "@/components/dashboard/analytics/JobStatusChart";
+import { useCountryStore } from "@/lib/store/countryStore";
 
 type Analytics = {
   currency: string;
@@ -47,11 +48,19 @@ type Analytics = {
 };
 
 export default function AnalyticsPage() {
+  const { countryCode } = useCountryStore();
+
   const [data, setData] = useState<Analytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const load = async () => {
+    if (!countryCode) {
+      setLoading(false);
+      setData(null);
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -66,9 +75,18 @@ export default function AnalyticsPage() {
 
   useEffect(() => {
     load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countryCode]);
 
   const currency = data?.currency || "ZAR";
+
+  if (!countryCode) {
+    return (
+      <div className="flex h-[60vh] items-center justify-center text-sm text-muted-foreground">
+        Select a country to view analytics.
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -103,10 +121,22 @@ export default function AnalyticsPage() {
             </CardHeader>
 
             <CardContent className="grid gap-4 md:grid-cols-4">
-              <Stat label="Total Revenue" value={`${data.business.revenue.totalRevenue} ${currency}`} />
-              <Stat label="Today Revenue" value={`${data.business.revenue.revenueToday} ${currency}`} />
-              <Stat label="Week Revenue" value={`${data.business.revenue.revenueWeek} ${currency}`} />
-              <Stat label="Month Revenue" value={`${data.business.revenue.revenueMonth} ${currency}`} />
+              <Stat
+                label="Total Revenue"
+                value={`${data.business.revenue.totalRevenue} ${currency}`}
+              />
+              <Stat
+                label="Today Revenue"
+                value={`${data.business.revenue.revenueToday} ${currency}`}
+              />
+              <Stat
+                label="Week Revenue"
+                value={`${data.business.revenue.revenueWeek} ${currency}`}
+              />
+              <Stat
+                label="Month Revenue"
+                value={`${data.business.revenue.revenueMonth} ${currency}`}
+              />
             </CardContent>
           </Card>
 
@@ -118,8 +148,14 @@ export default function AnalyticsPage() {
 
             <CardContent className="grid gap-4 md:grid-cols-3">
               <Stat label="Paid Payments" value={data.business.payments.paymentsPaid} />
-              <Stat label="Pending Payments" value={data.business.payments.paymentsPending} />
-              <Stat label="Refunded Payments" value={data.business.payments.paymentsRefunded} />
+              <Stat
+                label="Pending Payments"
+                value={data.business.payments.paymentsPending}
+              />
+              <Stat
+                label="Refunded Payments"
+                value={data.business.payments.paymentsRefunded}
+              />
             </CardContent>
           </Card>
 
@@ -133,7 +169,10 @@ export default function AnalyticsPage() {
               <Stat label="Total Jobs" value={data.business.jobs.totalJobs} />
               <Stat label="Completed Jobs" value={data.business.jobs.jobsCompleted} />
               <Stat label="Cancelled Jobs" value={data.business.jobs.jobsCancelled} />
-              <Stat label="Avg Completion" value={`${data.operations.avgCompletionMinutes} mins`} />
+              <Stat
+                label="Avg Completion"
+                value={`${data.operations.avgCompletionMinutes} mins`}
+              />
             </CardContent>
           </Card>
 
