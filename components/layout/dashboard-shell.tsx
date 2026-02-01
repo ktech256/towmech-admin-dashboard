@@ -1,20 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import React from "react";
 
-import { Sidebar } from "@/components/layout/sidebar";
-import { Topbar } from "@/components/layout/topbar";
-
-export function DashboardShell({ children }: { children: React.ReactNode }) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-
+export function DashboardShell({
+  children,
+  headerRight,
+}: {
+  children: React.ReactNode;
+  headerRight?: React.ReactNode;
+}) {
   return (
-    <div className="min-h-screen bg-slate-50">
-      <Sidebar isOpen={sidebarOpen} />
-      <div className="lg:pl-72">
-        <Topbar onMenuClick={() => setSidebarOpen((open) => !open)} />
-        <main className="px-4 pb-10 pt-6 lg:px-8">{children}</main>
+    <div className="min-h-screen">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b px-6 py-4">
+        <div className="font-semibold">Dashboard</div>
+
+        {/* ✅ RIGHT SLOT */}
+        <div className="flex items-center gap-2">{headerRight}</div>
       </div>
+
+      {/* Body */}
+      <div className="p-6">{children}</div>
     </div>
   );
 }
