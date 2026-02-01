@@ -1,6 +1,6 @@
 // lib/api/axios.ts
 import axios from "axios";
-import { countryStore } from "@/lib/store/countryStore";
+import { useCountryStore } from "@/lib/store/countryStore";
 
 const RAW_API_BASE =
   process.env.NEXT_PUBLIC_API_URL ||
@@ -14,14 +14,10 @@ const RAW_API_BASE =
  * - If env has trailing slash -> it is removed
  */
 function buildApiBaseUrl(input: string) {
-  const trimmed = String(input || "")
-    .trim()
-    .replace(/\/+$/, ""); // remove trailing slashes
+  const trimmed = String(input || "").trim().replace(/\/+$/, "");
 
-  // If already ends with /api (or /api/), keep it.
   if (trimmed.toLowerCase().endsWith("/api")) return trimmed;
 
-  // Otherwise append /api
   return `${trimmed}/api`;
 }
 
@@ -31,16 +27,15 @@ const api = axios.create({
   baseURL: API_BASE,
 });
 
-// ✅ Optional safety: if any code mistakenly calls "/api/xxx",
-// this prevents double "/api/api/xxx".
 api.interceptors.request.use((config) => {
+  // prevent double "/api/api"
   if (config.url && typeof config.url === "string") {
     if (API_BASE.toLowerCase().endsWith("/api") && config.url.startsWith("/api/")) {
       config.url = config.url.replace(/^\/api/, "");
     }
   }
 
-  // ✅ prevents "localStorage is not defined" during build/SSR
+  // ✅ token (client only)
   if (typeof window !== "undefined") {
     const token =
       localStorage.getItem("adminToken") || localStorage.getItem("token");
@@ -50,11 +45,15 @@ api.interceptors.request.use((config) => {
       config.headers.Authorization = `Bearer ${token}`;
     }
 
-    // ✅ Multi-country routing header
-    const countryCode = countryStore.getCountry();
-    if (countryCode) {
-      config.headers = config.headers || {};
-      config.headers["X-COUNTRY-CODE"] = countryCode;
+    // ✅ country header (client only)
+    try {
+      const countryCode = useCountryStore.getState()?.countryCode;
+      if (countryCode) {
+        config.headers = config.headers || {};
+        (config.headers as any)["X-COUNTRY-CODE"] = countryCode;
+      }
+    } catch {
+      // ignore
     }
   }
 
