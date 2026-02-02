@@ -1,10 +1,24 @@
 // lib/api/roles.ts
 import api from "@/lib/api/axios";
 
+/**
+ * Builds a safe path that works with either:
+ *   baseURL = https://api.towmech.com
+ * or
+ *   baseURL = https://api.towmech.com/api
+ *
+ * If baseURL already ends with /api, we don't add it again.
+ */
+function withApiPrefix(path: string) {
+  const base = (api.defaults.baseURL || "").replace(/\/$/, "");
+  const alreadyHasApi = base.endsWith("/api") || base.includes("/api/");
+  return `${alreadyHasApi ? "" : "/api"}${path.startsWith("/") ? "" : "/"}${path}`;
+}
+
 // ✅ Fetch all admin users (ADMIN + SUPERADMIN) (scoped by Country Workspace on backend)
 export async function fetchAdmins() {
   try {
-    const res = await api.get("/api/superadmin/admins");
+    const res = await api.get(withApiPrefix("/superadmin/admins"));
     return res.data;
   } catch (err: any) {
     throw new Error(
@@ -25,7 +39,7 @@ export async function createAdmin(payload: {
   permissions?: Record<string, boolean>;
 }) {
   try {
-    const res = await api.post("/api/superadmin/create-admin", payload);
+    const res = await api.post(withApiPrefix("/superadmin/create-admin"), payload);
     return res.data;
   } catch (err: any) {
     const message =
@@ -42,10 +56,9 @@ export async function updateAdminPermissions(
   permissions: Record<string, boolean>
 ) {
   try {
-    const res = await api.patch(
-      `/api/superadmin/admin/${adminId}/permissions`,
-      { permissions }
-    );
+    const res = await api.patch(withApiPrefix(`/superadmin/admin/${adminId}/permissions`), {
+      permissions,
+    });
     return res.data;
   } catch (err: any) {
     throw new Error(
@@ -59,7 +72,7 @@ export async function updateAdminPermissions(
 // ✅ Archive admin (SuperAdmin only)
 export async function archiveAdmin(adminId: string) {
   try {
-    const res = await api.patch(`/api/superadmin/admin/${adminId}/archive`, {});
+    const res = await api.patch(withApiPrefix(`/superadmin/admin/${adminId}/archive`), {});
     return res.data;
   } catch (err: any) {
     throw new Error(
@@ -73,7 +86,7 @@ export async function archiveAdmin(adminId: string) {
 // ✅ Suspend / Unsuspend / Ban / Unban users via adminUsers routes
 export async function suspendUser(userId: string) {
   try {
-    const res = await api.patch(`/api/admin/users/${userId}/suspend`, {});
+    const res = await api.patch(withApiPrefix(`/admin/users/${userId}/suspend`), {});
     return res.data;
   } catch (err: any) {
     throw new Error(
@@ -86,7 +99,7 @@ export async function suspendUser(userId: string) {
 
 export async function unsuspendUser(userId: string) {
   try {
-    const res = await api.patch(`/api/admin/users/${userId}/unsuspend`, {});
+    const res = await api.patch(withApiPrefix(`/admin/users/${userId}/unsuspend`), {});
     return res.data;
   } catch (err: any) {
     throw new Error(
@@ -99,7 +112,7 @@ export async function unsuspendUser(userId: string) {
 
 export async function banUser(userId: string) {
   try {
-    const res = await api.patch(`/api/admin/users/${userId}/ban`, {});
+    const res = await api.patch(withApiPrefix(`/admin/users/${userId}/ban`), {});
     return res.data;
   } catch (err: any) {
     throw new Error(
@@ -112,7 +125,7 @@ export async function banUser(userId: string) {
 
 export async function unbanUser(userId: string) {
   try {
-    const res = await api.patch(`/api/admin/users/${userId}/unban`, {});
+    const res = await api.patch(withApiPrefix(`/admin/users/${userId}/unban`), {});
     return res.data;
   } catch (err: any) {
     throw new Error(

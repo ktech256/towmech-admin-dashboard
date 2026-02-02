@@ -24,7 +24,7 @@ function getCountryCode(): string {
 
   // ✅ Primary: localStorage countryCode
   const direct = (localStorage.getItem("countryCode") || "").trim().toUpperCase();
-  if (/^[A-Z]{2}$/.test(direct)) return direct;
+  if (/^[A-Z]{2}$/.test(direct)) return normalizeIso2(direct);
 
   // ✅ Fallback: Zustand persist store (towmech_country_store)
   // Persist format: { state: { countryCode: "ZA", ... }, version: 1 }
@@ -34,7 +34,7 @@ function getCountryCode(): string {
       const parsed = JSON.parse(raw);
       const cc = parsed?.state?.countryCode;
       const norm = String(cc || "").trim().toUpperCase();
-      if (/^[A-Z]{2}$/.test(norm)) return norm;
+      if (/^[A-Z]{2}$/.test(norm)) return normalizeIso2(norm);
     }
   } catch {}
 

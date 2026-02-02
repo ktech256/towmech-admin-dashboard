@@ -1,67 +1,114 @@
 // components/layout/dashboard-shell.tsx
 "use client";
 
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import clsx from "clsx";
-import {
-  LayoutDashboard,
-  BarChart3,
-  Map,
-  Users,
-  Truck,
-  Briefcase,
-  CreditCard,
-  DollarSign,
-  Tags,
-  Globe,
-  Settings,
-  LifeBuoy,
-  Shield,
-  Bell,
-  MessageCircle,
-  UserCog,
-} from "lucide-react";
+import { LogOut } from "lucide-react";
+
+import api from "@/lib/api/axios";
+import { logoutAdmin } from "@/lib/api/auth";
+
+import { ADMIN_NAV_ITEMS, type AdminNavItem } from "@/config/admin-nav";
 
 type Props = {
   children: React.ReactNode;
   headerRight?: React.ReactNode;
 };
 
+type Permissions = Record<string, boolean>;
+
+type MeResponse = {
+  user?: {
+    _id?: string;
+    id?: string;
+    name?: string;
+    email?: string;
+    role?: string;
+    countryCode?: string;
+    permissions?: Permissions | null;
+  };
+};
+
+function isAdminRole(role?: string) {
+  return role === "Admin" || role === "SuperAdmin";
+}
+
 export default function DashboardShell({ children, headerRight }: Props) {
   const pathname = usePathname();
+  const router = useRouter();
 
-  const navItems = [
-    { name: "Overview", href: "/dashboard", icon: LayoutDashboard },
+  const [meLoading, setMeLoading] = useState(true);
+  const [me, setMe] = useState<MeResponse["user"] | null>(null);
+  const [meError, setMeError] = useState<string | null>(null);
 
-    { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
-    { name: "Live Map", href: "/dashboard/live-map", icon: Map },
-    { name: "Users", href: "/dashboard/users", icon: Users },
-    { name: "Providers", href: "/dashboard/providers", icon: Truck },
-    { name: "Jobs", href: "/dashboard/jobs", icon: Briefcase },
+  // ✅ Load current admin (token already attached by axios interceptor)
+  useEffect(() => {
+    let mounted = true;
 
-    { name: "Payments", href: "/dashboard/payments", icon: CreditCard },
-    { name: "Pricing", href: "/dashboard/pricing", icon: DollarSign },
-    { name: "Service Categories", href: "/dashboard/service-categories", icon: Tags },
+    async function loadMe() {
+      setMeLoading(true);
+      setMeError(null);
+      try {
+        const res = await api.get("/auth/me"); // axios.ts prevents /api/api
+        const data: MeResponse = res?.data || {};
+        if (!mounted) return;
 
-    { name: "Zones", href: "/dashboard/zones", icon: Map },
+        const u = data?.user || null;
+        setMe(u);
 
-    { name: "Support", href: "/dashboard/support", icon: LifeBuoy },
+        // optional: cache for other components
+        try {
+          if (typeof window !== "undefined") {
+            localStorage.setItem("towmech_admin_me", JSON.stringify(u || {}));
+          }
+        } catch {
+          // ignore
+        }
+      } catch (err: any) {
+        if (!mounted) return;
+        setMe(null);
+        setMeError(err?.response?.data?.message || "Failed to load session");
+      } finally {
+        if (!mounted) return;
+        setMeLoading(false);
+      }
+    }
 
-    { name: "Chats", href: "/dashboard/chats", icon: MessageCircle },
-    { name: "Notifications", href: "/dashboard/notifications", icon: Bell },
-    { name: "Safety & Security", href: "/dashboard/safety", icon: Shield },
-    { name: "Roles & Permissions", href: "/dashboard/roles", icon: UserCog },
+    loadMe();
 
-    { name: "System Settings", href: "/dashboard/settings", icon: Settings },
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
-    { name: "Countries", href: "/dashboard/countries", icon: Globe },
-    { name: "Country Services", href: "/dashboard/country-services", icon: Globe },
-    { name: "Payment Routing", href: "/dashboard/payment-routing", icon: CreditCard },
-    { name: "Legal", href: "/dashboard/legal", icon: Globe },
-    { name: "Insurance", href: "/dashboard/insurance", icon: Globe },
-  ];
+  const role = me?.role;
+  const perms: Permissions = (me?.permissions as Permissions) || {};
+
+  // ✅ Permission filter:
+  // - SuperAdmin sees everything
+  // - Admin sees items only if permissionKey is true OR item has no permissionKey
+  const visibleNavItems = useMemo<AdminNavItem[]>(() => {
+    if (!isAdminRole(role)) return [];
+    if (role === "SuperAdmin") return ADMIN_NAV_ITEMS;
+
+    return ADMIN_NAV_ITEMS.filter((item) => {
+      if (!item.permissionKey) return true;
+      return perms?.[item.permissionKey] === true;
+    });
+  }, [role, perms]);
+
+  const handleLogout = () => {
+    logoutAdmin();
+    // optional cleanup
+    try {
+      localStorage.removeItem("towmech_admin_me");
+    } catch {
+      // ignore
+    }
+    router.replace("/login");
+  };
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -70,10 +117,27 @@ export default function DashboardShell({ children, headerRight }: Props) {
         <div className="mb-6">
           <h1 className="text-lg font-semibold">TowMech Admin</h1>
           <p className="text-sm text-gray-500">Dashboard</p>
+
+          {/* ✅ small status */}
+          <div className="mt-3 text-xs text-gray-500">
+            {meLoading ? (
+              <div>Loading session...</div>
+            ) : me ? (
+              <div>
+                <div className="font-semibold text-gray-700">{me?.name || "Admin"}</div>
+                <div className="opacity-80">{me?.email || ""}</div>
+                <div className="opacity-80">
+                  Role: <span className="font-semibold">{me?.role || "-"}</span>
+                </div>
+              </div>
+            ) : (
+              <div className="text-red-600">{meError || "Not logged in"}</div>
+            )}
+          </div>
         </div>
 
         <nav className="space-y-1">
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const isActive =
               item.href === "/dashboard"
                 ? pathname === "/dashboard"
@@ -98,6 +162,18 @@ export default function DashboardShell({ children, headerRight }: Props) {
             );
           })}
         </nav>
+
+        {/* ✅ Logout always visible */}
+        <div className="mt-6 border-t pt-4">
+          <button
+            onClick={handleLogout}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
+            type="button"
+          >
+            <LogOut className="h-4 w-4" />
+            Logout
+          </button>
+        </div>
       </aside>
 
       {/* Main */}
@@ -106,6 +182,8 @@ export default function DashboardShell({ children, headerRight }: Props) {
         <div className="sticky top-0 z-20 border-b bg-white/90 backdrop-blur">
           <div className="flex items-center justify-between px-6 py-3">
             <div className="text-sm text-gray-500">Dashboard</div>
+
+            {/* keep your existing headerRight (CountrySwitcher, etc.) */}
             <div className="flex items-center gap-3">{headerRight}</div>
           </div>
         </div>

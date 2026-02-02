@@ -71,6 +71,20 @@ function displayLanguages(c: Country) {
   return Array.isArray(list) && list.length ? list.join(", ") : "-";
 }
 
+/**
+ * Builds a safe path that works with either:
+ *   baseURL = https://api.towmech.com
+ * or
+ *   baseURL = https://api.towmech.com/api
+ *
+ * If baseURL already ends with /api, we don't add it again.
+ */
+function withApiPrefix(path: string) {
+  const base = (api.defaults.baseURL || "").replace(/\/$/, "");
+  const alreadyHasApi = base.endsWith("/api") || base.includes("/api/");
+  return `${alreadyHasApi ? "" : "/api"}${path.startsWith("/") ? "" : "/"}${path}`;
+}
+
 export default function CountriesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -104,7 +118,7 @@ export default function CountriesPage() {
     setError(null);
     try {
       // Preferred controller route: GET /api/admin/countries
-      const res = await api.get<{ countries?: Country[] }>("/admin/countries");
+      const res = await api.get<{ countries?: Country[] }>(withApiPrefix("/admin/countries"));
       const list = Array.isArray(res.data?.countries) ? res.data.countries : [];
       setCountries(list);
     } catch (e: any) {
@@ -165,7 +179,7 @@ export default function CountriesPage() {
 
     try {
       // ✅ Preferred controller route: PUT /api/admin/countries/:code
-      await api.put(`/admin/countries/${code}`, payload);
+      await api.put(withApiPrefix(`/admin/countries/${code}`), payload);
 
       setForm({
         code: "",
@@ -186,7 +200,7 @@ export default function CountriesPage() {
       const status = e1?.response?.status;
       if (status === 404 || status === 405) {
         try {
-          await api.post(`/admin/countries`, payload);
+          await api.post(withApiPrefix(`/admin/countries`), payload);
           await loadCountries();
           return;
         } catch (e2: any) {
@@ -209,7 +223,7 @@ export default function CountriesPage() {
 
     try {
       // ✅ Preferred controller route: PATCH /api/admin/countries/:code/status
-      await api.patch(`/admin/countries/${code}/status`, {
+      await api.patch(withApiPrefix(`/admin/countries/${code}/status`), {
         isActive: nextActive,
       });
 
@@ -222,7 +236,7 @@ export default function CountriesPage() {
       const status = e1?.response?.status;
       if ((status === 404 || status === 405) && country._id) {
         try {
-          await api.patch(`/admin/countries/${country._id}`, { isActive: nextActive });
+          await api.patch(withApiPrefix(`/admin/countries/${country._id}`), { isActive: nextActive });
           setCountries((prev) =>
             prev.map((c) => (c._id === country._id ? { ...c, isActive: nextActive } : c))
           );
@@ -251,7 +265,7 @@ export default function CountriesPage() {
 
     try {
       // ✅ Preferred controller route: DELETE /api/admin/countries/:code
-      await api.delete(`/admin/countries/${code}`);
+      await api.delete(withApiPrefix(`/admin/countries/${code}`));
       setCountries((prev) => prev.filter((c) => c.code !== country.code));
       return;
     } catch (e1: any) {
@@ -259,7 +273,7 @@ export default function CountriesPage() {
       const status = e1?.response?.status;
       if ((status === 404 || status === 405) && country._id) {
         try {
-          await api.delete(`/admin/countries/${country._id}`);
+          await api.delete(withApiPrefix(`/admin/countries/${country._id}`));
           setCountries((prev) => prev.filter((c) => c._id !== country._id));
           return;
         } catch (e2: any) {

@@ -70,7 +70,8 @@ function setWorkspaceCountry(code: string) {
 
 async function fetchPublicCountries(API_BASE: string): Promise<PublicCountry[]> {
   const base = API_BASE.replace(/\/$/, "");
-  const url = `${base}/api/config/countries`;
+  // ✅ Align with backend public route: GET /api/countries
+  const url = `${base}/api/countries`;
 
   // cache per session so we don't spam
   if (typeof window !== "undefined") {
@@ -89,7 +90,10 @@ async function fetchPublicCountries(API_BASE: string): Promise<PublicCountry[]> 
 
   if (typeof window !== "undefined") {
     try {
-      sessionStorage.setItem("towmech_public_countries_cache_v1", JSON.stringify(list));
+      sessionStorage.setItem(
+        "towmech_public_countries_cache_v1",
+        JSON.stringify(list)
+      );
     } catch {}
   }
   return list;
@@ -105,7 +109,8 @@ function readDialCodesFromCountry(c: PublicCountry): string[] {
   const dialB = rules?.callingCode || rules?.countryCallingCode;
 
   if (typeof dialA === "string" && dialA.trim()) out.add(dialA.trim());
-  if (typeof dialB === "string" && dialB.trim()) out.add("+" + dialB.trim().replace(/^\+/, ""));
+  if (typeof dialB === "string" && dialB.trim())
+    out.add("+" + dialB.trim().replace(/^\+/, ""));
 
   // Sometimes stored as array
   const dialArr = rules?.dialCodes || rules?.dialingCodes;
@@ -168,7 +173,9 @@ async function inferAndSetWorkspaceByDialCode(phone: string, API_BASE: string) {
 export default function LoginPage() {
   const router = useRouter();
 
-  const [step, setStep] = useState<"LOGIN" | "OTP" | "FORGOT" | "RESET">("LOGIN");
+  const [step, setStep] = useState<"LOGIN" | "OTP" | "FORGOT" | "RESET">(
+    "LOGIN"
+  );
 
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
@@ -279,10 +286,16 @@ export default function LoginPage() {
       const res = await forgotPassword({ phone });
 
       // Always show success message (backend returns success even if user not found)
-      setSuccess(res?.message || "If your phone exists, an SMS code has been sent ✅");
+      setSuccess(
+        res?.message || "If your phone exists, an SMS code has been sent ✅"
+      );
       setStep("RESET");
     } catch (err: any) {
-      setError(err?.response?.data?.message || err?.message || "Failed to send reset code ❌");
+      setError(
+        err?.response?.data?.message ||
+          err?.message ||
+          "Failed to send reset code ❌"
+      );
     } finally {
       setLoading(false);
     }
@@ -336,7 +349,10 @@ export default function LoginPage() {
       </p>
 
       {/* ✅ Common Phone Field (used across flows) */}
-      {(step === "LOGIN" || step === "OTP" || step === "FORGOT" || step === "RESET") && (
+      {(step === "LOGIN" ||
+        step === "OTP" ||
+        step === "FORGOT" ||
+        step === "RESET") && (
         <>
           <label>Phone</label>
           <input
@@ -398,7 +414,11 @@ export default function LoginPage() {
           {error && <p style={{ color: "red" }}>{error}</p>}
           {success && <p style={{ color: "green" }}>{success}</p>}
 
-          <button onClick={handleVerifyOtp} disabled={loading} style={{ padding: 10 }}>
+          <button
+            onClick={handleVerifyOtp}
+            disabled={loading}
+            style={{ padding: 10 }}
+          >
             {loading ? "..." : "Verify OTP"}
           </button>
 
@@ -425,7 +445,11 @@ export default function LoginPage() {
           {error && <p style={{ color: "red" }}>{error}</p>}
           {success && <p style={{ color: "green" }}>{success}</p>}
 
-          <button onClick={handleForgotPassword} disabled={loading} style={{ padding: 10 }}>
+          <button
+            onClick={handleForgotPassword}
+            disabled={loading}
+            style={{ padding: 10 }}
+          >
             {loading ? "..." : "Send reset OTP"}
           </button>
 
@@ -445,7 +469,8 @@ export default function LoginPage() {
       {step === "RESET" && (
         <>
           <p style={{ fontSize: 13, opacity: 0.8 }}>
-            Enter the OTP sent to <strong>{phone}</strong> and choose a new password.
+            Enter the OTP sent to <strong>{phone}</strong> and choose a new
+            password.
           </p>
 
           <label>OTP</label>
@@ -470,7 +495,11 @@ export default function LoginPage() {
           {error && <p style={{ color: "red" }}>{error}</p>}
           {success && <p style={{ color: "green" }}>{success}</p>}
 
-          <button onClick={handleResetPassword} disabled={loading} style={{ padding: 10 }}>
+          <button
+            onClick={handleResetPassword}
+            disabled={loading}
+            style={{ padding: 10 }}
+          >
             {loading ? "..." : "Reset password"}
           </button>
 

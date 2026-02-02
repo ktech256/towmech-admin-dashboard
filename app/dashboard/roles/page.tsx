@@ -53,7 +53,10 @@ type AdminUser = {
 
 const PERMISSION_KEYS = [
   // ✅ NEW: controls if admin can change Country workspace
-  { key: "canSwitchCountryWorkspace", label: "Switch Country Workspace (Multi-country access)" },
+  {
+    key: "canSwitchCountryWorkspace",
+    label: "Switch Country Workspace (Multi-country access)",
+  },
 
   { key: "canViewOverview", label: "View Overview Dashboard" },
   { key: "canVerifyProviders", label: "Verify Providers" },
