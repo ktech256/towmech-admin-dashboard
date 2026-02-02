@@ -51,6 +51,20 @@ type AdminUser = {
   createdAt?: string;
 };
 
+/**
+ * ✅ Permissions list shown on Roles & Permissions page.
+ * Added missing items based on dashboard sidebar menus:
+ * - Chats
+ * - Notifications
+ * - Roles & Permissions
+ * - Countries
+ * - Country Services
+ * - Payment Routing
+ * - Legal
+ * - Insurance
+ *
+ * NOTE: We DO NOT remove/rename any existing permission keys.
+ */
 const PERMISSION_KEYS = [
   { key: "canViewOverview", label: "View Overview Dashboard" },
   { key: "canVerifyProviders", label: "Verify Providers" },
@@ -65,6 +79,16 @@ const PERMISSION_KEYS = [
   { key: "canManageServiceCategories", label: "Manage Service Categories" },
   { key: "canViewAnalytics", label: "View Analytics" },
   { key: "canManagePricing", label: "Manage Pricing" },
+
+  // ✅ NEW: add missing menu items (do not break old ones)
+  { key: "canManageChats", label: "Manage Chats" },
+  { key: "canManageNotifications", label: "Manage Notifications" },
+  { key: "canManageRolesPermissions", label: "Manage Roles & Permissions" },
+  { key: "canManageCountries", label: "Manage Countries" },
+  { key: "canManageCountryServices", label: "Manage Country Services" },
+  { key: "canManagePaymentRouting", label: "Manage Payment Routing" },
+  { key: "canManageLegal", label: "Manage Legal" },
+  { key: "canManageInsurance", label: "Manage Insurance" },
 ];
 
 export default function RolesPage() {
