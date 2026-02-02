@@ -34,6 +34,23 @@ function isAdminRole(role?: string) {
   return role === "Admin" || role === "SuperAdmin";
 }
 
+function normalizeIso2(v: any) {
+  const code = String(v || "").trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(code) ? code : "ZA";
+}
+
+function hasPermission(perms: Permissions, key?: string | string[]) {
+  if (!key) return true;
+
+  // string[] means: ANY of these permissions can unlock the nav item
+  if (Array.isArray(key)) {
+    return key.some((k) => perms?.[k] === true);
+  }
+
+  // string means: that permission must be true
+  return perms?.[key] === true;
+}
+
 export default function DashboardShell({ children, headerRight }: Props) {
   const pathname = usePathname();
   const router = useRouter();
@@ -69,8 +86,9 @@ export default function DashboardShell({ children, headerRight }: Props) {
           if (typeof window !== "undefined" && u?.role === "Admin") {
             const perms = (u?.permissions || {}) as Permissions;
             const canSwitch = perms?.canSwitchCountryWorkspace === true;
+
             if (!canSwitch) {
-              const cc = String(u?.countryCode || "ZA").trim().toUpperCase();
+              const cc = normalizeIso2(u?.countryCode);
               localStorage.setItem("countryCode", cc);
               window.dispatchEvent(
                 new CustomEvent("towmech:country-changed", { detail: { countryCode: cc } })
@@ -100,14 +118,12 @@ export default function DashboardShell({ children, headerRight }: Props) {
   // ✅ Permission filter:
   // - SuperAdmin sees everything
   // - Admin sees items only if permissionKey is true OR item has no permissionKey
+  // - permissionKey can be string OR string[] (ANY)
   const visibleNavItems = useMemo<AdminNavItem[]>(() => {
     if (!isAdminRole(role)) return [];
     if (role === "SuperAdmin") return ADMIN_NAV_ITEMS;
 
-    return ADMIN_NAV_ITEMS.filter((item) => {
-      if (!item.permissionKey) return true;
-      return perms?.[item.permissionKey] === true;
-    });
+    return ADMIN_NAV_ITEMS.filter((item) => hasPermission(perms, item.permissionKey));
   }, [role, perms]);
 
   const canSwitchCountryWorkspace =
