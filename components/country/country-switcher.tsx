@@ -19,12 +19,12 @@ type Props = {
   className?: string;
 };
 
-const STORAGE_KEY = "countryCode";
-
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ||
   process.env.NEXT_PUBLIC_API_BASE_URL ||
   "http://localhost:5000";
+
+const STORAGE_KEY = "countryCode";
 
 function normalizeIso2(v: any) {
   const code = String(v || "")
@@ -35,15 +35,15 @@ function normalizeIso2(v: any) {
 
 function authHeaders(extra: Record<string, string> = {}) {
   const token =
-    typeof window !== "undefined" ? localStorage.getItem("token") : null;
-
-  const countryCode =
-    typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
+    typeof window !== "undefined" ? localStorage.getItem("token") || localStorage.getItem("adminToken") : null;
 
   return {
     "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...(countryCode ? { "X-COUNTRY-CODE": normalizeIso2(countryCode) } : {}),
+    // ✅ ensure backend sees the active workspace even on direct fetch()
+    ...(typeof window !== "undefined"
+      ? { "X-COUNTRY-CODE": normalizeIso2(localStorage.getItem(STORAGE_KEY) || "ZA") }
+      : {}),
     ...extra,
   };
 }
@@ -57,23 +57,37 @@ export default function CountrySwitcher({
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [countries, setCountries] = useState<Country[]>([]);
+
+  // ✅ start from localStorage if available (single source of truth)
   const [internalValue, setInternalValue] = useState<string>(() => {
-    if (value) return normalizeIso2(value);
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) return normalizeIso2(saved);
-    }
-    return "ZA";
+    if (typeof window === "undefined") return normalizeIso2(value || "ZA");
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return normalizeIso2(value || stored || "ZA");
   });
 
   const selected = useMemo(() => {
     return countries.find((c) => c.code === internalValue) || null;
   }, [countries, internalValue]);
 
+  function persistCountry(code: string) {
+    if (typeof window === "undefined") return;
+    const cc = normalizeIso2(code);
+    localStorage.setItem(STORAGE_KEY, cc);
+
+    // ✅ remove legacy key if it exists (prevents future mismatch)
+    try {
+      localStorage.removeItem("towmech_country");
+    } catch {
+      // ignore
+    }
+
+    // ✅ broadcast to other tabs + any listeners
+    window.dispatchEvent(new Event("towmech:country-changed"));
+  }
+
   async function loadCountries() {
     setLoading(true);
     try {
-      // ✅ Use admin countries endpoint (global list)
       const res = await fetch(`${API_BASE}/api/admin/countries`, {
         method: "GET",
         headers: authHeaders(),
@@ -85,37 +99,23 @@ export default function CountrySwitcher({
       const list: Country[] = Array.isArray(data?.countries) ? data.countries : [];
       setCountries(list);
 
-      // ✅ Backend echoes workspaceCountryCode; prefer it if valid
-      const serverWorkspace = normalizeIso2(data?.workspaceCountryCode || internalValue);
-
-      // ✅ If current selection not present, pick first active
-      let next = serverWorkspace;
-      if (list.length > 0 && !list.some((c) => c.code === next)) {
+      // ✅ if current selection isn't valid, pick first active, persist it
+      if (list.length > 0 && !list.some((c) => c.code === internalValue)) {
         const firstActive = list.find((c) => c.isActive !== false) || list[0];
-        next = normalizeIso2(firstActive.code);
+        const cc = normalizeIso2(firstActive.code);
+        setInternalValue(cc);
+        persistCountry(cc);
+        onChange?.(cc);
       }
-
-      // ✅ Persist + notify
-      setInternalValue(next);
-      if (typeof window !== "undefined") {
-        localStorage.setItem(STORAGE_KEY, next);
-        window.dispatchEvent(
-          new CustomEvent("towmech:country-changed", { detail: { countryCode: next } })
-        );
-      }
-      onChange?.(next);
-    } catch (_) {
+    } catch {
       // fallback
-      const fallback = "ZA";
-      setCountries([{ code: "ZA", name: "South Africa", currency: "ZAR", isActive: true }]);
-      setInternalValue(fallback);
-      if (typeof window !== "undefined") {
-        localStorage.setItem(STORAGE_KEY, fallback);
-        window.dispatchEvent(
-          new CustomEvent("towmech:country-changed", { detail: { countryCode: fallback } })
-        );
+      const fallback = { code: "ZA", name: "South Africa", currency: "ZAR", isActive: true };
+      setCountries([fallback]);
+      if (internalValue !== "ZA") {
+        setInternalValue("ZA");
+        persistCountry("ZA");
+        onChange?.("ZA");
       }
-      onChange?.(fallback);
     } finally {
       setLoading(false);
     }
@@ -126,36 +126,35 @@ export default function CountrySwitcher({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // If parent controls value, sync it
+  // ✅ if parent controls value, keep in sync + persist
   useEffect(() => {
-    if (!value) return;
-    const v = normalizeIso2(value);
-    if (v !== internalValue) setInternalValue(v);
+    if (value) {
+      const cc = normalizeIso2(value);
+      if (cc !== internalValue) {
+        setInternalValue(cc);
+        persistCountry(cc);
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
-  // ✅ Listen for global changes (other components/tabs)
+  // ✅ sync if localStorage changes (other tab / manual edit)
   useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key !== STORAGE_KEY) return;
-      const v = normalizeIso2(e.newValue);
-      setInternalValue(v);
+    if (typeof window === "undefined") return;
+
+    const handler = () => {
+      const stored = normalizeIso2(localStorage.getItem(STORAGE_KEY) || "ZA");
+      if (stored !== internalValue) setInternalValue(stored);
     };
 
-    const onCustom = (e: Event) => {
-      const ce = e as CustomEvent;
-      const v = normalizeIso2(ce?.detail?.countryCode);
-      setInternalValue(v);
-    };
-
-    window.addEventListener("storage", onStorage);
-    window.addEventListener("towmech:country-changed", onCustom as any);
+    window.addEventListener("storage", handler);
+    window.addEventListener("towmech:country-changed", handler);
 
     return () => {
-      window.removeEventListener("storage", onStorage);
-      window.removeEventListener("towmech:country-changed", onCustom as any);
+      window.removeEventListener("storage", handler);
+      window.removeEventListener("towmech:country-changed", handler);
     };
-  }, []);
+  }, [internalValue]);
 
   return (
     <div
@@ -175,15 +174,11 @@ export default function CountrySwitcher({
         onChange={(e) => {
           const code = normalizeIso2(e.target.value);
           setInternalValue(code);
-
-          if (typeof window !== "undefined") {
-            localStorage.setItem(STORAGE_KEY, code);
-            window.dispatchEvent(
-              new CustomEvent("towmech:country-changed", { detail: { countryCode: code } })
-            );
-          }
-
+          persistCountry(code);
           onChange?.(code);
+
+          // ✅ hard reload ensures everything refetches using the new workspace
+          window.location.reload();
         }}
         style={{
           width: "100%",
