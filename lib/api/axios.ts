@@ -1,11 +1,19 @@
 // lib/api/axios.ts
 import axios from "axios";
-import { useCountryStore } from "@/lib/store/countryStore";
+
+const STORAGE_KEY = "countryCode";
 
 const RAW_API_BASE =
   process.env.NEXT_PUBLIC_API_URL ||
   process.env.NEXT_PUBLIC_API_BASE_URL ||
   "http://localhost:5000";
+
+function normalizeIso2(v: any) {
+  const code = String(v || "")
+    .trim()
+    .toUpperCase();
+  return /^[A-Z]{2}$/.test(code) ? code : "ZA";
+}
 
 /**
  * Normalize API base so that:
@@ -15,9 +23,7 @@ const RAW_API_BASE =
  */
 function buildApiBaseUrl(input: string) {
   const trimmed = String(input || "").trim().replace(/\/+$/, "");
-
   if (trimmed.toLowerCase().endsWith("/api")) return trimmed;
-
   return `${trimmed}/api`;
 }
 
@@ -35,26 +41,20 @@ api.interceptors.request.use((config) => {
     }
   }
 
-  // ✅ token (client only)
   if (typeof window !== "undefined") {
+    // ✅ token
     const token =
       localStorage.getItem("adminToken") || localStorage.getItem("token");
 
     if (token) {
       config.headers = config.headers || {};
-      config.headers.Authorization = `Bearer ${token}`;
+      (config.headers as any).Authorization = `Bearer ${token}`;
     }
 
-    // ✅ country header (client only)
-    try {
-      const countryCode = useCountryStore.getState()?.countryCode;
-      if (countryCode) {
-        config.headers = config.headers || {};
-        (config.headers as any)["X-COUNTRY-CODE"] = countryCode;
-      }
-    } catch {
-      // ignore
-    }
+    // ✅ country workspace header (single source of truth)
+    const cc = normalizeIso2(localStorage.getItem(STORAGE_KEY) || "ZA");
+    config.headers = config.headers || {};
+    (config.headers as any)["X-COUNTRY-CODE"] = cc;
   }
 
   return config;

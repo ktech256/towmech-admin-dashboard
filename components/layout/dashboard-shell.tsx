@@ -1,5 +1,7 @@
+// components/layout/dashboard-shell.tsx
 "use client";
 
+import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
@@ -24,7 +26,7 @@ import {
 
 type Props = {
   children: React.ReactNode;
-  headerRight?: React.ReactNode; // ✅ add back "Country workspace" slot
+  headerRight?: React.ReactNode;
 };
 
 export default function DashboardShell({ children, headerRight }: Props) {
@@ -100,7 +102,7 @@ export default function DashboardShell({ children, headerRight }: Props) {
 
       {/* Main */}
       <div className="flex-1">
-        {/* ✅ Top header bar (Country workspace goes here) */}
+        {/* Top header bar */}
         <div className="sticky top-0 z-20 border-b bg-white/90 backdrop-blur">
           <div className="flex items-center justify-between px-6 py-3">
             <div className="text-sm text-gray-500">Dashboard</div>

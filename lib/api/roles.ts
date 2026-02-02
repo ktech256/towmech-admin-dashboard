@@ -1,6 +1,7 @@
+// lib/api/roles.ts
 import api from "@/lib/api/axios";
 
-// ✅ Fetch all admin users (ADMIN + SUPERADMIN)
+// ✅ Fetch all admin users (ADMIN + SUPERADMIN) (scoped by Country Workspace on backend)
 export async function fetchAdmins() {
   try {
     const res = await api.get("/api/superadmin/admins");
@@ -14,11 +15,11 @@ export async function fetchAdmins() {
   }
 }
 
-// ✅ Create admin (SuperAdmin only)
+// ✅ Create admin (SuperAdmin only) (created into current Country Workspace)
 export async function createAdmin(payload: {
   name: string;
   email: string;
-  phone: string; // ✅ NEW (required)
+  phone: string;
   password: string;
   role?: string;
   permissions?: Record<string, boolean>;
@@ -69,7 +70,7 @@ export async function archiveAdmin(adminId: string) {
   }
 }
 
-// ✅ Suspend / Unsuspend / Ban / Unban admins via adminUsers routes
+// ✅ Suspend / Unsuspend / Ban / Unban users via adminUsers routes
 export async function suspendUser(userId: string) {
   try {
     const res = await api.patch(`/api/admin/users/${userId}/suspend`, {});
