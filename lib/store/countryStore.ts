@@ -21,27 +21,61 @@ export type CountryState = {
 const DEFAULT_COUNTRY = "ZA";
 const DEFAULT_LANGUAGE = "en";
 
+function normalizeIso2(v: any) {
+  const code = String(v || "").trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(code) ? code : DEFAULT_COUNTRY;
+}
+
+function safeGetInitialCountry(): string {
+  if (typeof window === "undefined") return DEFAULT_COUNTRY;
+
+  // ✅ primary workspace key
+  const direct = localStorage.getItem("countryCode");
+  if (direct && /^[A-Z]{2}$/.test(direct.trim().toUpperCase())) {
+    return direct.trim().toUpperCase();
+  }
+
+  return DEFAULT_COUNTRY;
+}
+
 export const useCountryStore = create<CountryState>()(
   persist(
     (set) => ({
-      countryCode: DEFAULT_COUNTRY,
+      countryCode: safeGetInitialCountry(),
       languageCode: DEFAULT_LANGUAGE,
 
-      setCountryCode: (code: string) =>
-        set({
-          countryCode: (code || DEFAULT_COUNTRY).toUpperCase(),
-        }),
+      setCountryCode: (code: string) => {
+        const normalized = normalizeIso2(code);
+
+        set({ countryCode: normalized });
+
+        // ✅ mirror to the canonical storage key used by axios + layout
+        if (typeof window !== "undefined") {
+          localStorage.setItem("countryCode", normalized);
+          window.dispatchEvent(
+            new CustomEvent("towmech:country-changed", { detail: { countryCode: normalized } })
+          );
+        }
+      },
 
       setLanguageCode: (code: string) =>
         set({
           languageCode: (code || DEFAULT_LANGUAGE).toLowerCase(),
         }),
 
-      reset: () =>
+      reset: () => {
         set({
           countryCode: DEFAULT_COUNTRY,
           languageCode: DEFAULT_LANGUAGE,
-        }),
+        });
+
+        if (typeof window !== "undefined") {
+          localStorage.setItem("countryCode", DEFAULT_COUNTRY);
+          window.dispatchEvent(
+            new CustomEvent("towmech:country-changed", { detail: { countryCode: DEFAULT_COUNTRY } })
+          );
+        }
+      },
     }),
     {
       name: "towmech_country_store",

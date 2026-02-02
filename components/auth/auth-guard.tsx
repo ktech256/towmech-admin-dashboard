@@ -1,4 +1,3 @@
-// components/auth/auth-guard.tsx
 "use client";
 
 import React, { useEffect, useState } from "react";
@@ -13,8 +12,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // ✅ client-only check
-    const token =
-      localStorage.getItem("adminToken") || localStorage.getItem("token");
+    const token = localStorage.getItem("adminToken") || localStorage.getItem("token");
 
     const isLoginPage = pathname === "/login";
 

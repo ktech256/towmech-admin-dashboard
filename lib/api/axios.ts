@@ -14,10 +14,31 @@ function buildApiBaseUrl(input: string) {
 
 const API_BASE = buildApiBaseUrl(RAW_API_BASE);
 
+function normalizeIso2(v: any) {
+  const code = String(v || "").trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(code) ? code : "ZA";
+}
+
 function getCountryCode(): string {
   if (typeof window === "undefined") return "ZA";
-  const v = (localStorage.getItem("countryCode") || "").trim().toUpperCase();
-  return /^[A-Z]{2}$/.test(v) ? v : "ZA";
+
+  // ✅ Primary: localStorage countryCode
+  const direct = (localStorage.getItem("countryCode") || "").trim().toUpperCase();
+  if (/^[A-Z]{2}$/.test(direct)) return direct;
+
+  // ✅ Fallback: Zustand persist store (towmech_country_store)
+  // Persist format: { state: { countryCode: "ZA", ... }, version: 1 }
+  try {
+    const raw = localStorage.getItem("towmech_country_store");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      const cc = parsed?.state?.countryCode;
+      const norm = String(cc || "").trim().toUpperCase();
+      if (/^[A-Z]{2}$/.test(norm)) return norm;
+    }
+  } catch {}
+
+  return "ZA";
 }
 
 const api = axios.create({
@@ -32,7 +53,6 @@ api.interceptors.request.use((config) => {
     }
   }
 
-  // token
   if (typeof window !== "undefined") {
     const token = localStorage.getItem("adminToken") || localStorage.getItem("token");
     if (token) {
@@ -40,7 +60,7 @@ api.interceptors.request.use((config) => {
       (config.headers as any).Authorization = `Bearer ${token}`;
     }
 
-    // ✅ country workspace header (single source of truth)
+    // ✅ workspace header (single source of truth)
     config.headers = config.headers || {};
     (config.headers as any)["X-COUNTRY-CODE"] = getCountryCode();
   }

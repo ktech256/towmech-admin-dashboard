@@ -1,33 +1,74 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import api from "@/lib/api/axios";
 
 type Country = {
-  _id: string;
+  _id?: string;
+
+  // Common
   code: string;
   name: string;
-  currency: string;
-  isActive: boolean;
+
+  // Different backends use different names:
+  currency?: string;
+  currencyCode?: string;
+  currencySymbol?: string;
+
+  // Language fields
   defaultLanguage?: string;
   supportedLanguages?: string[];
+  languages?: string[];
+
   timezone?: string;
+  isActive: boolean;
+  isPublic?: boolean;
+
+  // Dialing rules
+  dialCode?: string;
+  phoneRules?: {
+    dialCode?: string;
+    dialingCode?: string;
+    callingCode?: string;
+    countryCallingCode?: string;
+  };
+
   createdAt?: string;
   updatedAt?: string;
 };
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ||
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  "http://localhost:5000";
+function normalizeIso2(v: any) {
+  const code = String(v || "").trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(code) ? code : "";
+}
 
-function authHeaders() {
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("token") : null;
+function normalizeDialCode(v: any) {
+  let s = String(v || "").trim();
+  if (!s) return "";
+  // allow "+27" or "27"
+  if (!s.startsWith("+")) s = "+" + s;
+  // keep + and digits only
+  s = "+" + s.replace(/[^\d]/g, "");
+  return s === "+" ? "" : s;
+}
 
-  return {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
+function displayDialCode(c: Country) {
+  return (
+    c?.phoneRules?.dialCode ||
+    c?.phoneRules?.dialingCode ||
+    c?.dialCode ||
+    (c?.phoneRules?.countryCallingCode ? `+${c.phoneRules.countryCallingCode}` : "") ||
+    ""
+  );
+}
+
+function displayCurrency(c: Country) {
+  return c.currencyCode || c.currency || "-";
+}
+
+function displayLanguages(c: Country) {
+  const list = c.languages || c.supportedLanguages || [];
+  return Array.isArray(list) && list.length ? list.join(", ") : "-";
 }
 
 export default function CountriesPage() {
@@ -41,10 +82,13 @@ export default function CountriesPage() {
     code: "",
     name: "",
     currency: "",
+    dialCode: "",
+
     defaultLanguage: "en",
     supportedLanguages: "en",
     timezone: "Africa/Johannesburg",
     isActive: true,
+    isPublic: true,
   });
 
   const canSubmit = useMemo(() => {
@@ -59,69 +103,98 @@ export default function CountriesPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/admin/countries`, {
-        method: "GET",
-        headers: authHeaders(),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.message || "Failed to load countries");
-      }
-
-      const data = await res.json();
-      setCountries(Array.isArray(data?.countries) ? data.countries : []);
+      // Preferred controller route: GET /api/admin/countries
+      const res = await api.get<{ countries?: Country[] }>("/admin/countries");
+      const list = Array.isArray(res.data?.countries) ? res.data.countries : [];
+      setCountries(list);
     } catch (e: any) {
-      setError(e?.message || "Failed to load countries");
+      setError(e?.response?.data?.message || e?.message || "Failed to load countries");
     } finally {
       setLoading(false);
     }
   }
 
-  async function createCountry() {
+  async function createOrUpsertCountry() {
     if (!canSubmit) return;
     setSaving(true);
     setError(null);
 
-    try {
-      const payload = {
-        code: form.code.trim().toUpperCase(),
-        name: form.name.trim(),
-        currency: form.currency.trim().toUpperCase(),
-        defaultLanguage: form.defaultLanguage.trim(),
-        supportedLanguages: form.supportedLanguages
-          .split(",")
-          .map((x) => x.trim())
-          .filter(Boolean),
-        timezone: form.timezone.trim(),
-        isActive: form.isActive,
+    const code = normalizeIso2(form.code);
+    if (!code) {
+      setError("Invalid country code (ISO2 required, e.g. ZA)");
+      setSaving(false);
+      return;
+    }
+
+    const dial = normalizeDialCode(form.dialCode);
+
+    const payload: any = {
+      code,
+      name: form.name.trim(),
+
+      // Send BOTH for compatibility
+      currency: form.currency.trim().toUpperCase(),
+      currencyCode: form.currency.trim().toUpperCase(),
+
+      defaultLanguage: form.defaultLanguage.trim(),
+      // Send BOTH shapes for compatibility
+      supportedLanguages: form.supportedLanguages
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean),
+      languages: form.supportedLanguages
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean),
+
+      timezone: form.timezone.trim(),
+      isActive: !!form.isActive,
+      isPublic: !!form.isPublic,
+    };
+
+    // Dial code support:
+    // Controller expects phoneRules object (from your earlier countryController.js select)
+    if (dial) {
+      payload.dialCode = dial; // legacy compatibility if backend uses direct field
+      payload.phoneRules = {
+        ...(payload.phoneRules || {}),
+        dialCode: dial,
+        countryCallingCode: dial.replace(/^\+/, ""),
       };
+    }
 
-      const res = await fetch(`${API_BASE}/api/admin/countries`, {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify(payload),
-      });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        throw new Error(data?.message || "Failed to create country");
-      }
+    try {
+      // ✅ Preferred controller route: PUT /api/admin/countries/:code
+      await api.put(`/admin/countries/${code}`, payload);
 
       setForm({
         code: "",
         name: "",
         currency: "",
+        dialCode: "",
         defaultLanguage: "en",
         supportedLanguages: "en",
         timezone: "Africa/Johannesburg",
         isActive: true,
+        isPublic: true,
       });
 
       await loadCountries();
-    } catch (e: any) {
-      setError(e?.message || "Failed to create country");
+      return;
+    } catch (e1: any) {
+      // ✅ Backward compatibility fallback: POST /api/admin/countries
+      const status = e1?.response?.status;
+      if (status === 404 || status === 405) {
+        try {
+          await api.post(`/admin/countries`, payload);
+          await loadCountries();
+          return;
+        } catch (e2: any) {
+          setError(e2?.response?.data?.message || e2?.message || "Failed to create country");
+        }
+      } else {
+        setError(e1?.response?.data?.message || e1?.message || "Failed to create country");
+      }
     } finally {
       setSaving(false);
     }
@@ -130,23 +203,36 @@ export default function CountriesPage() {
   async function toggleActive(country: Country) {
     setSaving(true);
     setError(null);
+
+    const code = normalizeIso2(country.code);
+    const nextActive = !country.isActive;
+
     try {
-      const res = await fetch(`${API_BASE}/api/admin/countries/${country._id}`, {
-        method: "PATCH",
-        headers: authHeaders(),
-        body: JSON.stringify({ isActive: !country.isActive }),
+      // ✅ Preferred controller route: PATCH /api/admin/countries/:code/status
+      await api.patch(`/admin/countries/${code}/status`, {
+        isActive: nextActive,
       });
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.message || "Failed to update country");
-
       setCountries((prev) =>
-        prev.map((c) =>
-          c._id === country._id ? { ...c, isActive: !c.isActive } : c
-        )
+        prev.map((c) => (c.code === country.code ? { ...c, isActive: nextActive } : c))
       );
-    } catch (e: any) {
-      setError(e?.message || "Failed to update country");
+      return;
+    } catch (e1: any) {
+      // ✅ Backward compatibility fallback: PATCH by _id
+      const status = e1?.response?.status;
+      if ((status === 404 || status === 405) && country._id) {
+        try {
+          await api.patch(`/admin/countries/${country._id}`, { isActive: nextActive });
+          setCountries((prev) =>
+            prev.map((c) => (c._id === country._id ? { ...c, isActive: nextActive } : c))
+          );
+          return;
+        } catch (e2: any) {
+          setError(e2?.response?.data?.message || e2?.message || "Failed to update country");
+        }
+      } else {
+        setError(e1?.response?.data?.message || e1?.message || "Failed to update country");
+      }
     } finally {
       setSaving(false);
     }
@@ -160,18 +246,28 @@ export default function CountriesPage() {
 
     setSaving(true);
     setError(null);
+
+    const code = normalizeIso2(country.code);
+
     try {
-      const res = await fetch(`${API_BASE}/api/admin/countries/${country._id}`, {
-        method: "DELETE",
-        headers: authHeaders(),
-      });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.message || "Failed to delete country");
-
-      setCountries((prev) => prev.filter((c) => c._id !== country._id));
-    } catch (e: any) {
-      setError(e?.message || "Failed to delete country");
+      // ✅ Preferred controller route: DELETE /api/admin/countries/:code
+      await api.delete(`/admin/countries/${code}`);
+      setCountries((prev) => prev.filter((c) => c.code !== country.code));
+      return;
+    } catch (e1: any) {
+      // ✅ Backward compatibility fallback: DELETE by _id
+      const status = e1?.response?.status;
+      if ((status === 404 || status === 405) && country._id) {
+        try {
+          await api.delete(`/admin/countries/${country._id}`);
+          setCountries((prev) => prev.filter((c) => c._id !== country._id));
+          return;
+        } catch (e2: any) {
+          setError(e2?.response?.data?.message || e2?.message || "Failed to delete country");
+        }
+      } else {
+        setError(e1?.response?.data?.message || e1?.message || "Failed to delete country");
+      }
     } finally {
       setSaving(false);
     }
@@ -184,11 +280,9 @@ export default function CountriesPage() {
 
   return (
     <div style={{ padding: 20, maxWidth: 1100 }}>
-      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>
-        Countries
-      </h1>
+      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Countries</h1>
       <p style={{ marginBottom: 20, opacity: 0.8 }}>
-        Manage TowMech Global countries (activation, currency, language, timezone).
+        Manage TowMech Global countries (activation, currency, language, timezone, dial code).
       </p>
 
       {error ? (
@@ -215,9 +309,7 @@ export default function CountriesPage() {
           background: "white",
         }}
       >
-        <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>
-          Add Country
-        </h2>
+        <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>Add / Update Country</h2>
 
         <div
           style={{
@@ -227,12 +319,10 @@ export default function CountriesPage() {
           }}
         >
           <div>
-            <label style={{ fontSize: 12, opacity: 0.8 }}>Country Code</label>
+            <label style={{ fontSize: 12, opacity: 0.8 }}>Country Code (ISO2)</label>
             <input
               value={form.code}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, code: e.target.value }))
-              }
+              onChange={(e) => setForm((p) => ({ ...p, code: e.target.value }))}
               placeholder="ZA"
               style={{
                 width: "100%",
@@ -247,9 +337,7 @@ export default function CountriesPage() {
             <label style={{ fontSize: 12, opacity: 0.8 }}>Country Name</label>
             <input
               value={form.name}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, name: e.target.value }))
-              }
+              onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
               placeholder="South Africa"
               style={{
                 width: "100%",
@@ -264,9 +352,7 @@ export default function CountriesPage() {
             <label style={{ fontSize: 12, opacity: 0.8 }}>Currency</label>
             <input
               value={form.currency}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, currency: e.target.value }))
-              }
+              onChange={(e) => setForm((p) => ({ ...p, currency: e.target.value }))}
               placeholder="ZAR"
               style={{
                 width: "100%",
@@ -278,14 +364,28 @@ export default function CountriesPage() {
           </div>
 
           <div>
-            <label style={{ fontSize: 12, opacity: 0.8 }}>
-              Default Language
-            </label>
+            <label style={{ fontSize: 12, opacity: 0.8 }}>Dial Code</label>
+            <input
+              value={form.dialCode}
+              onChange={(e) => setForm((p) => ({ ...p, dialCode: e.target.value }))}
+              placeholder="+27"
+              style={{
+                width: "100%",
+                padding: 10,
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+              }}
+            />
+            <div style={{ fontSize: 11, opacity: 0.7, marginTop: 6 }}>
+              Used to route users/providers per country dialing code (parallel countries).
+            </div>
+          </div>
+
+          <div>
+            <label style={{ fontSize: 12, opacity: 0.8 }}>Default Language</label>
             <input
               value={form.defaultLanguage}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, defaultLanguage: e.target.value }))
-              }
+              onChange={(e) => setForm((p) => ({ ...p, defaultLanguage: e.target.value }))}
               placeholder="en"
               style={{
                 width: "100%",
@@ -302,9 +402,7 @@ export default function CountriesPage() {
             </label>
             <input
               value={form.supportedLanguages}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, supportedLanguages: e.target.value }))
-              }
+              onChange={(e) => setForm((p) => ({ ...p, supportedLanguages: e.target.value }))}
               placeholder="en,zu,af"
               style={{
                 width: "100%",
@@ -319,9 +417,7 @@ export default function CountriesPage() {
             <label style={{ fontSize: 12, opacity: 0.8 }}>Timezone</label>
             <input
               value={form.timezone}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, timezone: e.target.value }))
-              }
+              onChange={(e) => setForm((p) => ({ ...p, timezone: e.target.value }))}
               placeholder="Africa/Johannesburg"
               style={{
                 width: "100%",
@@ -333,20 +429,27 @@ export default function CountriesPage() {
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+        <div style={{ display: "flex", gap: 14, marginTop: 14, alignItems: "center" }}>
           <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <input
               type="checkbox"
               checked={form.isActive}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, isActive: e.target.checked }))
-              }
+              onChange={(e) => setForm((p) => ({ ...p, isActive: e.target.checked }))}
             />
             Active
           </label>
 
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={form.isPublic}
+              onChange={(e) => setForm((p) => ({ ...p, isPublic: e.target.checked }))}
+            />
+            Public
+          </label>
+
           <button
-            onClick={createCountry}
+            onClick={createOrUpsertCountry}
             disabled={!canSubmit || saving}
             style={{
               marginLeft: "auto",
@@ -359,7 +462,7 @@ export default function CountriesPage() {
               fontWeight: 600,
             }}
           >
-            {saving ? "Saving..." : "Add Country"}
+            {saving ? "Saving..." : "Save Country"}
           </button>
         </div>
       </div>
@@ -401,32 +504,19 @@ export default function CountriesPage() {
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ textAlign: "left" }}>
-                  <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>
-                    Code
-                  </th>
-                  <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>
-                    Name
-                  </th>
-                  <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>
-                    Currency
-                  </th>
-                  <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>
-                    Languages
-                  </th>
-                  <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>
-                    Timezone
-                  </th>
-                  <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>
-                    Status
-                  </th>
-                  <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>
-                    Actions
-                  </th>
+                  <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>Code</th>
+                  <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>Name</th>
+                  <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>Dial</th>
+                  <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>Currency</th>
+                  <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>Languages</th>
+                  <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>Timezone</th>
+                  <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>Status</th>
+                  <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {countries.map((c) => (
-                  <tr key={c._id}>
+                  <tr key={c._id || c.code}>
                     <td
                       style={{
                         padding: 10,
@@ -436,44 +526,20 @@ export default function CountriesPage() {
                     >
                       {c.code}
                     </td>
-                    <td
-                      style={{
-                        padding: 10,
-                        borderBottom: "1px solid #f3f4f6",
-                      }}
-                    >
-                      {c.name}
+                    <td style={{ padding: 10, borderBottom: "1px solid #f3f4f6" }}>{c.name}</td>
+                    <td style={{ padding: 10, borderBottom: "1px solid #f3f4f6" }}>
+                      {displayDialCode(c) || "-"}
                     </td>
-                    <td
-                      style={{
-                        padding: 10,
-                        borderBottom: "1px solid #f3f4f6",
-                      }}
-                    >
-                      {c.currency}
+                    <td style={{ padding: 10, borderBottom: "1px solid #f3f4f6" }}>
+                      {displayCurrency(c)}
                     </td>
-                    <td
-                      style={{
-                        padding: 10,
-                        borderBottom: "1px solid #f3f4f6",
-                      }}
-                    >
-                      {(c.supportedLanguages || []).join(", ") || "-"}
+                    <td style={{ padding: 10, borderBottom: "1px solid #f3f4f6" }}>
+                      {displayLanguages(c)}
                     </td>
-                    <td
-                      style={{
-                        padding: 10,
-                        borderBottom: "1px solid #f3f4f6",
-                      }}
-                    >
+                    <td style={{ padding: 10, borderBottom: "1px solid #f3f4f6" }}>
                       {c.timezone || "-"}
                     </td>
-                    <td
-                      style={{
-                        padding: 10,
-                        borderBottom: "1px solid #f3f4f6",
-                      }}
-                    >
+                    <td style={{ padding: 10, borderBottom: "1px solid #f3f4f6" }}>
                       <span
                         style={{
                           padding: "4px 8px",
@@ -529,6 +595,11 @@ export default function CountriesPage() {
                 ))}
               </tbody>
             </table>
+
+            <div style={{ marginTop: 10, fontSize: 12, opacity: 0.75 }}>
+              Note: The API client automatically sends <code>X-COUNTRY-CODE</code> from the selected
+              dashboard workspace.
+            </div>
           </div>
         )}
       </div>
