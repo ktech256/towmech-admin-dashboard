@@ -51,21 +51,10 @@ type AdminUser = {
   createdAt?: string;
 };
 
-/**
- * ✅ Permissions list shown on Roles & Permissions page.
- * Added missing items based on dashboard sidebar menus:
- * - Chats
- * - Notifications
- * - Roles & Permissions
- * - Countries
- * - Country Services
- * - Payment Routing
- * - Legal
- * - Insurance
- *
- * NOTE: We DO NOT remove/rename any existing permission keys.
- */
 const PERMISSION_KEYS = [
+  // ✅ NEW: controls if admin can change Country workspace
+  { key: "canSwitchCountryWorkspace", label: "Switch Country Workspace (Multi-country access)" },
+
   { key: "canViewOverview", label: "View Overview Dashboard" },
   { key: "canVerifyProviders", label: "Verify Providers" },
   { key: "canApprovePayments", label: "Approve Payments" },
@@ -80,10 +69,10 @@ const PERMISSION_KEYS = [
   { key: "canViewAnalytics", label: "View Analytics" },
   { key: "canManagePricing", label: "Manage Pricing" },
 
-  // ✅ NEW: add missing menu items (do not break old ones)
+  // ✅ add other menu perms if you want them enforced
   { key: "canManageChats", label: "Manage Chats" },
   { key: "canManageNotifications", label: "Manage Notifications" },
-  { key: "canManageRolesPermissions", label: "Manage Roles & Permissions" },
+  { key: "canManageRoles", label: "Manage Roles & Permissions" },
   { key: "canManageCountries", label: "Manage Countries" },
   { key: "canManageCountryServices", label: "Manage Country Services" },
   { key: "canManagePaymentRouting", label: "Manage Payment Routing" },
@@ -109,7 +98,7 @@ export default function RolesPage() {
   // ✅ Create Admin Form
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState(""); // ✅ NEW
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
 
   const [role, setRole] = useState<"Admin" | "SuperAdmin">("Admin");
@@ -219,7 +208,7 @@ export default function RolesPage() {
       await createAdmin({
         name,
         email,
-        phone, // ✅ NEW
+        phone,
         password,
         role,
         permissions: createPermissions,
@@ -229,7 +218,7 @@ export default function RolesPage() {
 
       setName("");
       setEmail("");
-      setPhone(""); // ✅ NEW
+      setPhone("");
       setPassword("");
       setRole("Admin");
       setCreatePermissions({});
