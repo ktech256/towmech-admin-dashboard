@@ -1,106 +1,103 @@
+// Dashboard/components/layout/dashboard-shell.tsx
 "use client";
 
-import React, { useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import clsx from "clsx";
+import {
+  LayoutDashboard,
+  BarChart3,
+  Map,
+  Users,
+  Truck,
+  Briefcase,
+  CreditCard,
+  DollarSign,
+  Tags,
+  Globe,
+  Settings,
+  LifeBuoy,
+  Shield,
+  Bell,
+  MessageCircle,
+  UserCog,
+} from "lucide-react";
 
-type NavItem = { href: string; label: string };
-
-export function DashboardShell({
-  children,
-  headerRight,
-}: {
-  children: React.ReactNode;
-  headerRight?: React.ReactNode;
-}) {
+export default function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
-  const navItems: NavItem[] = useMemo(
-    () => [
-      { href: "/dashboard", label: "Overview" },
-      { href: "/dashboard/analytics", label: "Analytics" },
-      { href: "/dashboard/live-map", label: "Live Map" },
+  const navItems = [
+    { name: "Overview", href: "/dashboard", icon: LayoutDashboard },
 
-      { href: "/dashboard/users", label: "Users" },
-      { href: "/dashboard/providers", label: "Providers" },
-      { href: "/dashboard/jobs", label: "Jobs" },
-      { href: "/dashboard/payments", label: "Payments" },
+    { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
+    { name: "Live Map", href: "/dashboard/live-map", icon: Map },
+    { name: "Users", href: "/dashboard/users", icon: Users },
+    { name: "Providers", href: "/dashboard/providers", icon: Truck },
+    { name: "Jobs", href: "/dashboard/jobs", icon: Briefcase },
 
-      { href: "/dashboard/pricing", label: "Pricing" },
-      { href: "/dashboard/service-categories", label: "Service Categories" },
-      { href: "/dashboard/zones", label: "Zones" },
-      { href: "/dashboard/support", label: "Support" },
-      { href: "/dashboard/settings", label: "System Settings" },
+    { name: "Payments", href: "/dashboard/payments", icon: CreditCard },
+    { name: "Pricing", href: "/dashboard/pricing", icon: DollarSign },
+    { name: "Service Categories", href: "/dashboard/service-categories", icon: Tags },
 
-      // ✅ Country workspace modules
-      { href: "/dashboard/countries", label: "Countries" },
-      { href: "/dashboard/country-services", label: "Country Services" },
-      { href: "/dashboard/payment-routing", label: "Payment Routing" },
-      { href: "/dashboard/legal", label: "Legal" },
-      { href: "/dashboard/insurance", label: "Insurance" },
-    ],
-    []
-  );
+    { name: "Zones", href: "/dashboard/zones", icon: Map },
+
+    { name: "Support", href: "/dashboard/support", icon: LifeBuoy },
+    // (ratings page exists at /dashboard/support/ratings - keep under Support unless you want it separate)
+
+    // ✅ ADDED BACK (critical)
+    { name: "Chats", href: "/dashboard/chats", icon: MessageCircle },
+    { name: "Notifications", href: "/dashboard/notifications", icon: Bell },
+    { name: "Safety & Security", href: "/dashboard/safety", icon: Shield },
+    { name: "Roles & Permissions", href: "/dashboard/roles", icon: UserCog },
+
+    { name: "System Settings", href: "/dashboard/settings", icon: Settings },
+
+    { name: "Countries", href: "/dashboard/countries", icon: Globe },
+    { name: "Country Services", href: "/dashboard/country-services", icon: Globe },
+    { name: "Payment Routing", href: "/dashboard/payment-routing", icon: CreditCard },
+    { name: "Legal", href: "/dashboard/legal", icon: Globe },
+    { name: "Insurance", href: "/dashboard/insurance", icon: Globe },
+  ];
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="flex min-h-screen">
-        {/* ✅ Sidebar */}
-        <aside className="hidden w-64 shrink-0 border-r bg-white md:block">
-          <div className="border-b px-4 py-4">
-            <div className="text-sm font-semibold text-slate-900">TowMech Admin</div>
-            <div className="text-xs text-slate-500">Dashboard</div>
-          </div>
-
-          <nav className="p-3">
-            <div className="space-y-1">
-              {navItems.map((item) => {
-                const active =
-                  pathname === item.href || pathname?.startsWith(item.href + "/");
-
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={[
-                      "flex items-center rounded-md px-3 py-2 text-sm transition",
-                      active
-                        ? "bg-slate-900 text-white"
-                        : "text-slate-700 hover:bg-slate-100",
-                    ].join(" ")}
-                  >
-                    {item.label}
-                  </Link>
-                );
-              })}
-            </div>
-          </nav>
-        </aside>
-
-        {/* ✅ Main */}
-        <div className="flex min-w-0 flex-1 flex-col">
-          {/* Header */}
-          <header className="sticky top-0 z-10 border-b bg-white">
-            <div className="flex items-center justify-between gap-3 px-4 py-3 md:px-6">
-              <div className="flex items-center gap-3">
-                {/* Mobile nav hint */}
-                <div className="md:hidden text-sm font-semibold text-slate-900">
-                  Dashboard
-                </div>
-                <div className="hidden md:block text-sm font-semibold text-slate-900">
-                  Dashboard
-                </div>
-              </div>
-
-              {/* ✅ RIGHT SLOT */}
-              <div className="flex items-center gap-2">{headerRight}</div>
-            </div>
-          </header>
-
-          {/* Page Body */}
-          <main className="flex-1 p-4 md:p-6">{children}</main>
+    <div className="flex min-h-screen bg-gray-50">
+      {/* Sidebar */}
+      <aside className="w-64 border-r bg-white px-4 py-6">
+        <div className="mb-6">
+          <h1 className="text-lg font-semibold">TowMech Admin</h1>
+          <p className="text-sm text-gray-500">Dashboard</p>
         </div>
-      </div>
+
+        <nav className="space-y-1">
+          {navItems.map((item) => {
+            const isActive =
+              item.href === "/dashboard"
+                ? pathname === "/dashboard"
+                : pathname?.startsWith(item.href);
+
+            const Icon = item.icon;
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={clsx(
+                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition",
+                  isActive
+                    ? "bg-gray-900 text-white"
+                    : "text-gray-700 hover:bg-gray-100"
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {item.name}
+              </Link>
+            );
+          })}
+        </nav>
+      </aside>
+
+      {/* Main */}
+      <main className="flex-1 p-6">{children}</main>
     </div>
   );
 }
