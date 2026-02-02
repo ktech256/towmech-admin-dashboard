@@ -10,7 +10,7 @@ import { LogOut } from "lucide-react";
 import api from "@/lib/api/axios";
 import { logoutAdmin } from "@/lib/api/auth";
 
-import { ADMIN_NAV_ITEMS, type AdminNavItem } from "@/config/admin-nav";
+import { ADMIN_NAV_ITEMS, hasPermission } from "@/config/admin-nav";
 
 type Props = {
   children: React.ReactNode;
@@ -27,46 +27,12 @@ type MeResponse = {
     email?: string;
     role?: string;
     countryCode?: string;
-    permissions?: any; // backend may send different shapes
+    permissions?: Permissions | null;
   };
 };
 
 function isAdminRole(role?: string) {
   return role === "Admin" || role === "SuperAdmin";
-}
-
-function normalizePermissions(input: any): Permissions {
-  const out: Permissions = {};
-
-  // If backend sends ["canViewOverview", ...]
-  if (Array.isArray(input)) {
-    for (const k of input) {
-      const key = String(k || "").trim();
-      if (key) out[key] = true;
-    }
-    return out;
-  }
-
-  // If backend sends { canViewOverview: true, ... } (or "true"/1)
-  if (input && typeof input === "object") {
-    for (const [k, v] of Object.entries(input)) {
-      const key = String(k || "").trim();
-      if (!key) continue;
-
-      // coerce common truthy forms
-      const val =
-        v === true ||
-        v === "true" ||
-        v === 1 ||
-        v === "1" ||
-        v === "yes" ||
-        v === "on";
-
-      out[key] = !!val;
-    }
-  }
-
-  return out;
 }
 
 export default function DashboardShell({ children, headerRight }: Props) {
@@ -118,29 +84,16 @@ export default function DashboardShell({ children, headerRight }: Props) {
   }, []);
 
   const role = me?.role;
-
-  // ✅ Normalize permissions so Admin filtering works even if backend returns strings/arrays
-  const perms: Permissions = useMemo(() => {
-    const raw =
-      me?.permissions ??
-      (me as any)?.permission ??
-      (me as any)?.perms ??
-      (me as any)?.access?.permissions;
-
-    return normalizePermissions(raw);
-  }, [me]);
+  const perms: Permissions = (me?.permissions as Permissions) || {};
 
   // ✅ Permission filter:
   // - SuperAdmin sees everything
-  // - Admin sees items only if permissionKey is enabled OR item has no permissionKey
-  const visibleNavItems = useMemo<AdminNavItem[]>(() => {
+  // - Admin sees items only if permission passes OR item has no permissionKey
+  const visibleNavItems = useMemo(() => {
     if (!isAdminRole(role)) return [];
     if (role === "SuperAdmin") return ADMIN_NAV_ITEMS;
 
-    return ADMIN_NAV_ITEMS.filter((item) => {
-      if (!item.permissionKey) return true;
-      return perms[item.permissionKey] === true;
-    });
+    return ADMIN_NAV_ITEMS.filter((item) => hasPermission(perms, item.permissionKey));
   }, [role, perms]);
 
   const handleLogout = () => {
