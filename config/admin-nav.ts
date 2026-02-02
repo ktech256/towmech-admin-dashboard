@@ -49,12 +49,12 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     permissionKey: "canViewAnalytics",
   },
 
-  // Live Map
+  // Live Map (✅ NEW PERMISSION KEY)
   {
     name: "Live Map",
     href: "/dashboard/live-map",
     icon: Map,
-    permissionKey: "canManageZones",
+    permissionKey: "canViewLiveMap",
   },
 
   // Users / Providers / Jobs

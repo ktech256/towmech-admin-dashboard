@@ -1,4 +1,3 @@
-// components/layout/dashboard-shell.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -14,7 +13,7 @@ import { ADMIN_NAV_ITEMS, type AdminNavItem } from "@/config/admin-nav";
 
 type Props = {
   children: React.ReactNode;
-  headerRight?: React.ReactNode;
+  headerRight?: React.ReactNode; // CountrySwitcher passed from layout
 };
 
 type Permissions = Record<string, boolean>;
@@ -27,24 +26,12 @@ type MeResponse = {
     email?: string;
     role?: string;
     countryCode?: string;
-    country?: string;
     permissions?: Permissions | null;
   };
 };
 
 function isAdminRole(role?: string) {
   return role === "Admin" || role === "SuperAdmin";
-}
-
-function hasPermission(perms: Permissions, key?: AdminNavItem["permissionKey"]) {
-  if (!key) return true;
-
-  if (Array.isArray(key)) {
-    // ✅ ANY-of
-    return key.some((k) => perms?.[k] === true);
-  }
-
-  return perms?.[key] === true;
 }
 
 export default function DashboardShell({ children, headerRight }: Props) {
@@ -55,30 +42,42 @@ export default function DashboardShell({ children, headerRight }: Props) {
   const [me, setMe] = useState<MeResponse["user"] | null>(null);
   const [meError, setMeError] = useState<string | null>(null);
 
-  // ✅ Load current admin (token already attached by axios interceptor)
   useEffect(() => {
     let mounted = true;
 
     async function loadMe() {
       setMeLoading(true);
       setMeError(null);
-
       try {
-        const res = await api.get("/auth/me"); // axios.ts prevents /api/api
+        const res = await api.get("/auth/me");
         const data: MeResponse = res?.data || {};
         if (!mounted) return;
 
         const u = data?.user || null;
         setMe(u);
 
-        // optional: cache for other components
+        // cache for other components
         try {
           if (typeof window !== "undefined") {
             localStorage.setItem("towmech_admin_me", JSON.stringify(u || {}));
           }
-        } catch {
-          // ignore
-        }
+        } catch {}
+
+        // ✅ IMPORTANT: lock workspace for Admins who cannot switch
+        // Even if user previously selected another country, force it back.
+        try {
+          if (typeof window !== "undefined" && u?.role === "Admin") {
+            const perms = (u?.permissions || {}) as Permissions;
+            const canSwitch = perms?.canSwitchCountryWorkspace === true;
+            if (!canSwitch) {
+              const cc = String(u?.countryCode || "ZA").trim().toUpperCase();
+              localStorage.setItem("countryCode", cc);
+              window.dispatchEvent(
+                new CustomEvent("towmech:country-changed", { detail: { countryCode: cc } })
+              );
+            }
+          }
+        } catch {}
       } catch (err: any) {
         if (!mounted) return;
         setMe(null);
@@ -90,7 +89,6 @@ export default function DashboardShell({ children, headerRight }: Props) {
     }
 
     loadMe();
-
     return () => {
       mounted = false;
     };
@@ -101,36 +99,38 @@ export default function DashboardShell({ children, headerRight }: Props) {
 
   // ✅ Permission filter:
   // - SuperAdmin sees everything
-  // - Admin sees items only if permissionKey is allowed OR item has no permissionKey
-  const visibleNavItems = useMemo(() => {
+  // - Admin sees items only if permissionKey is true OR item has no permissionKey
+  const visibleNavItems = useMemo<AdminNavItem[]>(() => {
     if (!isAdminRole(role)) return [];
     if (role === "SuperAdmin") return ADMIN_NAV_ITEMS;
 
-    return ADMIN_NAV_ITEMS.filter((item) => hasPermission(perms, item.permissionKey));
+    return ADMIN_NAV_ITEMS.filter((item) => {
+      if (!item.permissionKey) return true;
+      return perms?.[item.permissionKey] === true;
+    });
   }, [role, perms]);
+
+  const canSwitchCountryWorkspace =
+    role === "SuperAdmin" || perms?.canSwitchCountryWorkspace === true;
+
+  // ✅ if they can’t switch workspace: show nothing on the top right
+  const safeHeaderRight = canSwitchCountryWorkspace ? headerRight : null;
 
   const handleLogout = () => {
     logoutAdmin();
-
-    // optional cleanup
     try {
       localStorage.removeItem("towmech_admin_me");
-    } catch {
-      // ignore
-    }
-
+    } catch {}
     router.replace("/login");
   };
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      {/* Sidebar */}
       <aside className="w-64 border-r bg-white px-4 py-6">
         <div className="mb-6">
           <h1 className="text-lg font-semibold">TowMech Admin</h1>
           <p className="text-sm text-gray-500">Dashboard</p>
 
-          {/* ✅ small status */}
           <div className="mt-3 text-xs text-gray-500">
             {meLoading ? (
               <div>Loading session...</div>
@@ -163,9 +163,7 @@ export default function DashboardShell({ children, headerRight }: Props) {
                 href={item.href}
                 className={clsx(
                   "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition",
-                  isActive
-                    ? "bg-gray-900 text-white"
-                    : "text-gray-700 hover:bg-gray-100"
+                  isActive ? "bg-gray-900 text-white" : "text-gray-700 hover:bg-gray-100"
                 )}
               >
                 <Icon className="h-4 w-4" />
@@ -175,7 +173,6 @@ export default function DashboardShell({ children, headerRight }: Props) {
           })}
         </nav>
 
-        {/* ✅ Logout always visible */}
         <div className="mt-6 border-t pt-4">
           <button
             onClick={handleLogout}
@@ -188,15 +185,11 @@ export default function DashboardShell({ children, headerRight }: Props) {
         </div>
       </aside>
 
-      {/* Main */}
       <div className="flex-1">
-        {/* Top header bar */}
         <div className="sticky top-0 z-20 border-b bg-white/90 backdrop-blur">
           <div className="flex items-center justify-between px-6 py-3">
             <div className="text-sm text-gray-500">Dashboard</div>
-
-            {/* keep your existing headerRight (CountrySwitcher, etc.) */}
-            <div className="flex items-center gap-3">{headerRight}</div>
+            <div className="flex items-center gap-3">{safeHeaderRight}</div>
           </div>
         </div>
 
