@@ -11,9 +11,9 @@ export default function DashboardLayout({
 }) {
   return (
     <AuthGuard>
-      <DashboardShell>
-  {children}
-</DashboardShell>
+      <DashboardShell headerRight={<CountrySwitcher />}>
+        {children}
+      </DashboardShell>
     </AuthGuard>
   );
 }

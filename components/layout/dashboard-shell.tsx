@@ -1,4 +1,3 @@
-// Dashboard/components/layout/dashboard-shell.tsx
 "use client";
 
 import Link from "next/link";
@@ -23,7 +22,12 @@ import {
   UserCog,
 } from "lucide-react";
 
-export default function DashboardShell({ children }: { children: React.ReactNode }) {
+type Props = {
+  children: React.ReactNode;
+  headerRight?: React.ReactNode; // ✅ add back "Country workspace" slot
+};
+
+export default function DashboardShell({ children, headerRight }: Props) {
   const pathname = usePathname();
 
   const navItems = [
@@ -42,9 +46,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
     { name: "Zones", href: "/dashboard/zones", icon: Map },
 
     { name: "Support", href: "/dashboard/support", icon: LifeBuoy },
-    // (ratings page exists at /dashboard/support/ratings - keep under Support unless you want it separate)
 
-    // ✅ ADDED BACK (critical)
     { name: "Chats", href: "/dashboard/chats", icon: MessageCircle },
     { name: "Notifications", href: "/dashboard/notifications", icon: Bell },
     { name: "Safety & Security", href: "/dashboard/safety", icon: Shield },
@@ -97,7 +99,17 @@ export default function DashboardShell({ children }: { children: React.ReactNode
       </aside>
 
       {/* Main */}
-      <main className="flex-1 p-6">{children}</main>
+      <div className="flex-1">
+        {/* ✅ Top header bar (Country workspace goes here) */}
+        <div className="sticky top-0 z-20 border-b bg-white/90 backdrop-blur">
+          <div className="flex items-center justify-between px-6 py-3">
+            <div className="text-sm text-gray-500">Dashboard</div>
+            <div className="flex items-center gap-3">{headerRight}</div>
+          </div>
+        </div>
+
+        <main className="p-6">{children}</main>
+      </div>
     </div>
   );
 }
