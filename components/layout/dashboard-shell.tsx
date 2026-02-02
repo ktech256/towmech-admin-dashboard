@@ -27,12 +27,46 @@ type MeResponse = {
     email?: string;
     role?: string;
     countryCode?: string;
-    permissions?: Permissions | null;
+    permissions?: any; // backend may send different shapes
   };
 };
 
 function isAdminRole(role?: string) {
   return role === "Admin" || role === "SuperAdmin";
+}
+
+function normalizePermissions(input: any): Permissions {
+  const out: Permissions = {};
+
+  // If backend sends ["canViewOverview", ...]
+  if (Array.isArray(input)) {
+    for (const k of input) {
+      const key = String(k || "").trim();
+      if (key) out[key] = true;
+    }
+    return out;
+  }
+
+  // If backend sends { canViewOverview: true, ... } (or "true"/1)
+  if (input && typeof input === "object") {
+    for (const [k, v] of Object.entries(input)) {
+      const key = String(k || "").trim();
+      if (!key) continue;
+
+      // coerce common truthy forms
+      const val =
+        v === true ||
+        v === "true" ||
+        v === 1 ||
+        v === "1" ||
+        v === "yes" ||
+        v === "on";
+
+      out[key] = !!val;
+    }
+  }
+
+  return out;
 }
 
 export default function DashboardShell({ children, headerRight }: Props) {
@@ -84,18 +118,28 @@ export default function DashboardShell({ children, headerRight }: Props) {
   }, []);
 
   const role = me?.role;
-  const perms: Permissions = (me?.permissions as Permissions) || {};
+
+  // ✅ Normalize permissions so Admin filtering works even if backend returns strings/arrays
+  const perms: Permissions = useMemo(() => {
+    const raw =
+      me?.permissions ??
+      (me as any)?.permission ??
+      (me as any)?.perms ??
+      (me as any)?.access?.permissions;
+
+    return normalizePermissions(raw);
+  }, [me]);
 
   // ✅ Permission filter:
   // - SuperAdmin sees everything
-  // - Admin sees items only if permissionKey is true OR item has no permissionKey
+  // - Admin sees items only if permissionKey is enabled OR item has no permissionKey
   const visibleNavItems = useMemo<AdminNavItem[]>(() => {
     if (!isAdminRole(role)) return [];
     if (role === "SuperAdmin") return ADMIN_NAV_ITEMS;
 
     return ADMIN_NAV_ITEMS.filter((item) => {
       if (!item.permissionKey) return true;
-      return perms?.[item.permissionKey] === true;
+      return perms[item.permissionKey] === true;
     });
   }, [role, perms]);
 
@@ -151,9 +195,7 @@ export default function DashboardShell({ children, headerRight }: Props) {
                 href={item.href}
                 className={clsx(
                   "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition",
-                  isActive
-                    ? "bg-gray-900 text-white"
-                    : "text-gray-700 hover:bg-gray-100"
+                  isActive ? "bg-gray-900 text-white" : "text-gray-700 hover:bg-gray-100"
                 )}
               >
                 <Icon className="h-4 w-4" />
