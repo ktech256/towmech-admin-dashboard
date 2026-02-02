@@ -70,8 +70,8 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   // Zones
   { name: "Zones", href: "/dashboard/zones", icon: Map, permissionKey: "canManageZones" },
 
-  // Support (always visible)
-  { name: "Support", href: "/dashboard/support", icon: LifeBuoy },
+  // Support (✅ now permission-controlled)
+  { name: "Support", href: "/dashboard/support", icon: LifeBuoy, permissionKey: "canViewSupport" },
 
   // Chats / Notifications
   { name: "Chats", href: "/dashboard/chats", icon: MessageCircle, permissionKey: "canManageChats" },

@@ -52,13 +52,20 @@ type AdminUser = {
 };
 
 const PERMISSION_KEYS = [
-  // ✅ NEW: controls if admin can change Country workspace
+  // ✅ controls if admin can change Country workspace
   {
     key: "canSwitchCountryWorkspace",
     label: "Switch Country Workspace (Multi-country access)",
   },
 
   { key: "canViewOverview", label: "View Overview Dashboard" },
+
+  // ✅ Support permission (so you can show/hide Support menu)
+  { key: "canViewSupport", label: "View Support" },
+
+  // ✅ Live Map permission (separate from Zones)
+  { key: "canViewLiveMap", label: "View Live Map" },
+
   { key: "canVerifyProviders", label: "Verify Providers" },
   { key: "canApprovePayments", label: "Approve Payments" },
   { key: "canRefundPayments", label: "Refund Payments" },
@@ -72,7 +79,7 @@ const PERMISSION_KEYS = [
   { key: "canViewAnalytics", label: "View Analytics" },
   { key: "canManagePricing", label: "Manage Pricing" },
 
-  // ✅ add other menu perms if you want them enforced
+  // ✅ other menu perms
   { key: "canManageChats", label: "Manage Chats" },
   { key: "canManageNotifications", label: "Manage Notifications" },
   { key: "canManageRoles", label: "Manage Roles & Permissions" },
