@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import api from "@/lib/api/axios";
 
 import { ModuleHeader } from "@/components/dashboard/module-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,7 +27,6 @@ import {
 } from "@/lib/api/providers";
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-
 import { useCountryStore } from "@/lib/store/countryStore";
 
 type Provider = {
@@ -35,8 +35,16 @@ type Provider = {
   email?: string;
   role?: string;
   createdAt?: string;
+  countryCode?: string;
+
   providerProfile?: {
     verificationStatus?: string;
+  };
+
+  accountStatus?: {
+    isSuspended?: boolean;
+    isBanned?: boolean;
+    isArchived?: boolean;
   };
 };
 
@@ -49,10 +57,17 @@ type VerificationDocs = {
 
 type TabKey = "pending" | "approved" | "rejected";
 
+function withApiPrefix(path: string) {
+  const base = (api.defaults.baseURL || "").replace(/\/$/, "");
+  const alreadyHasApi = base.endsWith("/api") || base.includes("/api/");
+  return `${alreadyHasApi ? "" : "/api"}${path.startsWith("/") ? "" : "/"}${path}`;
+}
+
 export default function ProvidersPage() {
   const [tab, setTab] = useState<TabKey>("pending");
   const [providers, setProviders] = useState<Provider[]>([]);
   const [loading, setLoading] = useState(true);
+
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -74,14 +89,9 @@ export default function ProvidersPage() {
 
     try {
       let data;
-
-      if (activeTab === "pending") {
-        data = await fetchPendingProviders();
-      } else if (activeTab === "approved") {
-        data = await fetchApprovedProviders();
-      } else {
-        data = await fetchRejectedProviders();
-      }
+      if (activeTab === "pending") data = await fetchPendingProviders();
+      else if (activeTab === "approved") data = await fetchApprovedProviders();
+      else data = await fetchRejectedProviders();
 
       const list = data?.providers || data?.data || [];
       setProviders(list);
@@ -94,14 +104,12 @@ export default function ProvidersPage() {
   };
 
   useEffect(() => {
-    // if no country selected yet, don't load (prevents mixed data)
     if (!countryCode) {
       setProviders([]);
       setLoading(false);
       setError("Please select a country first.");
       return;
     }
-
     loadProviders(tab);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, countryCode]);
@@ -162,6 +170,55 @@ export default function ProvidersPage() {
     }
   };
 
+  // ✅ Status actions (uses adminUsers routes)
+  const suspendUser = async (id: string) => {
+    setActionLoadingId(id);
+    try {
+      await api.patch(withApiPrefix(`/admin/users/${id}/suspend`), { reason: "Suspended by admin" });
+      await loadProviders(tab);
+    } catch (err: any) {
+      alert(err?.response?.data?.message || "Suspend failed");
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const unsuspendUser = async (id: string) => {
+    setActionLoadingId(id);
+    try {
+      await api.patch(withApiPrefix(`/admin/users/${id}/unsuspend`), {});
+      await loadProviders(tab);
+    } catch (err: any) {
+      alert(err?.response?.data?.message || "Unsuspend failed");
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const banUser = async (id: string) => {
+    setActionLoadingId(id);
+    try {
+      await api.patch(withApiPrefix(`/admin/users/${id}/ban`), { reason: "Banned by admin" });
+      await loadProviders(tab);
+    } catch (err: any) {
+      alert(err?.response?.data?.message || "Ban failed");
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const unbanUser = async (id: string) => {
+    setActionLoadingId(id);
+    try {
+      await api.patch(withApiPrefix(`/admin/users/${id}/unban`), {});
+      await loadProviders(tab);
+    } catch (err: any) {
+      alert(err?.response?.data?.message || "Unban failed");
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
   const renderDoc = (label: string, url?: string | null) => {
     return (
       <div className="space-y-2 rounded-lg border p-3">
@@ -180,12 +237,7 @@ export default function ProvidersPage() {
               }}
             />
 
-            <a
-              href={url}
-              target="_blank"
-              rel="noreferrer"
-              className="text-sm text-blue-600 underline"
-            >
+            <a href={url} target="_blank" rel="noreferrer" className="text-sm text-blue-600 underline">
               Open {label}
             </a>
           </div>
@@ -208,6 +260,14 @@ export default function ProvidersPage() {
     );
   };
 
+  const statusPill = (p: Provider) => {
+    const st = p.accountStatus || {};
+    if (st.isBanned) return <Badge className="bg-red-600 text-white">BANNED</Badge>;
+    if (st.isSuspended) return <Badge className="bg-orange-600 text-white">SUSPENDED</Badge>;
+    if (st.isArchived) return <Badge className="bg-slate-700 text-white">ARCHIVED</Badge>;
+    return <Badge className="bg-green-600 text-white">ACTIVE</Badge>;
+  };
+
   return (
     <div className="space-y-6">
       <ModuleHeader
@@ -222,7 +282,6 @@ export default function ProvidersPage() {
         {tabButton("rejected", "Rejected")}
       </div>
 
-      {/* Search + Table */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-4">
           <CardTitle className="text-base">
@@ -256,7 +315,8 @@ export default function ProvidersPage() {
                     <TableHead>Name</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Type</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>Verification</TableHead>
+                    <TableHead>Account</TableHead>
                     <TableHead>Created</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -265,58 +325,87 @@ export default function ProvidersPage() {
                 <TableBody>
                   {filteredProviders.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8 text-sm text-muted-foreground">
+                      <TableCell colSpan={7} className="text-center py-8 text-sm text-muted-foreground">
                         No providers found ✅
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredProviders.map((p) => (
-                      <TableRow key={p._id}>
-                        <TableCell className="font-medium">{p.name || "—"}</TableCell>
-                        <TableCell>{p.email || "—"}</TableCell>
+                    filteredProviders.map((p) => {
+                      const st = p.accountStatus || {};
+                      const busy = actionLoadingId === p._id;
 
-                        <TableCell>
-                          <Badge variant="secondary">
-                            {p.role === "TOW_TRUCK"
-                              ? "Tow Truck"
-                              : p.role === "MECHANIC"
-                              ? "Mechanic"
-                              : p.role}
-                          </Badge>
-                        </TableCell>
+                      return (
+                        <TableRow key={p._id}>
+                          <TableCell className="font-medium">{p.name || "—"}</TableCell>
+                          <TableCell>{p.email || "—"}</TableCell>
 
-                        <TableCell>
-                          <Badge variant="secondary">{p.providerProfile?.verificationStatus || "—"}</Badge>
-                        </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary">
+                              {p.role === "TOW_TRUCK"
+                                ? "Tow Truck"
+                                : p.role === "MECHANIC"
+                                ? "Mechanic"
+                                : p.role}
+                            </Badge>
+                          </TableCell>
 
-                        <TableCell>
-                          {p.createdAt ? new Date(p.createdAt).toLocaleDateString() : "—"}
-                        </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary">{p.providerProfile?.verificationStatus || "—"}</Badge>
+                          </TableCell>
 
-                        <TableCell className="text-right space-x-2">
-                          <Button size="sm" variant="outline" onClick={() => openDocs(p)}>
-                            View Docs
-                          </Button>
+                          <TableCell>{statusPill(p)}</TableCell>
 
-                          {tab === "pending" && (
-                            <>
-                              <Button size="sm" disabled={actionLoadingId === p._id} onClick={() => handleApprove(p._id)}>
-                                {actionLoadingId === p._id ? "..." : "Approve"}
+                          <TableCell>
+                            {p.createdAt ? new Date(p.createdAt).toLocaleDateString() : "—"}
+                          </TableCell>
+
+                          <TableCell className="text-right space-x-2">
+                            <Button size="sm" variant="outline" onClick={() => openDocs(p)}>
+                              View Docs
+                            </Button>
+
+                            {/* Verify actions */}
+                            {tab === "pending" && (
+                              <>
+                                <Button size="sm" disabled={busy} onClick={() => handleApprove(p._id)}>
+                                  {busy ? "..." : "Approve"}
+                                </Button>
+
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  disabled={busy}
+                                  onClick={() => handleReject(p._id)}
+                                >
+                                  {busy ? "..." : "Reject"}
+                                </Button>
+                              </>
+                            )}
+
+                            {/* ✅ Account controls */}
+                            {!st.isSuspended ? (
+                              <Button size="sm" disabled={busy} onClick={() => suspendUser(p._id)}>
+                                {busy ? "..." : "Suspend"}
                               </Button>
-
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                disabled={actionLoadingId === p._id}
-                                onClick={() => handleReject(p._id)}
-                              >
-                                {actionLoadingId === p._id ? "..." : "Reject"}
+                            ) : (
+                              <Button size="sm" variant="secondary" disabled={busy} onClick={() => unsuspendUser(p._id)}>
+                                {busy ? "..." : "Unsuspend"}
                               </Button>
-                            </>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))
+                            )}
+
+                            {!st.isBanned ? (
+                              <Button size="sm" variant="destructive" disabled={busy} onClick={() => banUser(p._id)}>
+                                {busy ? "..." : "Ban"}
+                              </Button>
+                            ) : (
+                              <Button size="sm" variant="secondary" disabled={busy} onClick={() => unbanUser(p._id)}>
+                                {busy ? "..." : "Unban"}
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
                   )}
                 </TableBody>
               </Table>
@@ -325,7 +414,7 @@ export default function ProvidersPage() {
         </CardContent>
       </Card>
 
-      {/* ✅ Docs Modal */}
+      {/* Docs Modal */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
