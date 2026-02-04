@@ -1,426 +1,393 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Card } from "@/components/ui/card";
+import { toast } from "sonner";
 
-type Country = {
-  _id: string;
-  code: string;
-  name: string;
-  currency: string;
-  isActive: boolean;
+// ============================
+// Types
+// ============================
+type ServiceFlags = {
+  towingEnabled: boolean;
+  mechanicEnabled: boolean;
+  emergencySupportEnabled: boolean; // canonical
+  insuranceEnabled: boolean;
+  chatEnabled: boolean;
+  ratingsEnabled: boolean;
+
+  // extended (already supported by backend + model; safe to keep)
+  winchRecoveryEnabled: boolean;
+  roadsideAssistanceEnabled: boolean;
+  jumpStartEnabled: boolean;
+  tyreChangeEnabled: boolean;
+  fuelDeliveryEnabled: boolean;
+  lockoutEnabled: boolean;
+
+  // legacy alias (backend keeps in sync)
+  supportEnabled?: boolean;
 };
 
-type ServiceConfig = {
-  _id: string;
+type CountryServiceConfig = {
+  _id?: string;
   countryCode: string;
-
-  services: {
-    towing: boolean;
-    mechanic: boolean;
-    emergency: boolean;
-
-    // future toggles
-    insurance: boolean;
-    chat: boolean;
-    ratings: boolean;
-  };
-
-  updatedAt?: string;
+  services: ServiceFlags;
+  payments?: any;
   createdAt?: string;
+  updatedAt?: string;
 };
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ||
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  "http://localhost:5000";
+type ApiGetResponse = { config: CountryServiceConfig };
+type ApiPutResponse = { message: string; config: CountryServiceConfig };
 
-function authHeaders(extra: Record<string, string> = {}) {
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("token") : null;
+// ============================
+// Defaults (match backend defaults)
+// ============================
+const DEFAULT_SERVICES: ServiceFlags = {
+  towingEnabled: true,
+  mechanicEnabled: true,
+  emergencySupportEnabled: true,
+  insuranceEnabled: false,
+  chatEnabled: true,
+  ratingsEnabled: true,
+
+  winchRecoveryEnabled: false,
+  roadsideAssistanceEnabled: false,
+  jumpStartEnabled: false,
+  tyreChangeEnabled: false,
+  fuelDeliveryEnabled: false,
+  lockoutEnabled: false,
+};
+
+// ============================
+// Helpers
+// ============================
+function normalizeServicesFromApi(input: any): ServiceFlags {
+  const s = input && typeof input === "object" ? input : {};
+
+  // Support legacy dashboard keys too (towing/mechanic/etc),
+  // but canonical is "*Enabled".
+  const emergency =
+    typeof s.emergencySupportEnabled === "boolean"
+      ? s.emergencySupportEnabled
+      : typeof s.supportEnabled === "boolean"
+        ? s.supportEnabled
+        : typeof s.emergencySupport === "boolean"
+          ? s.emergencySupport
+          : typeof s.support === "boolean"
+            ? s.support
+            : DEFAULT_SERVICES.emergencySupportEnabled;
 
   return {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...extra,
+    towingEnabled:
+      typeof s.towingEnabled === "boolean"
+        ? s.towingEnabled
+        : typeof s.towing === "boolean"
+          ? s.towing
+          : DEFAULT_SERVICES.towingEnabled,
+
+    mechanicEnabled:
+      typeof s.mechanicEnabled === "boolean"
+        ? s.mechanicEnabled
+        : typeof s.mechanic === "boolean"
+          ? s.mechanic
+          : DEFAULT_SERVICES.mechanicEnabled,
+
+    emergencySupportEnabled: emergency,
+
+    insuranceEnabled:
+      typeof s.insuranceEnabled === "boolean"
+        ? s.insuranceEnabled
+        : typeof s.insurance === "boolean"
+          ? s.insurance
+          : DEFAULT_SERVICES.insuranceEnabled,
+
+    chatEnabled:
+      typeof s.chatEnabled === "boolean"
+        ? s.chatEnabled
+        : typeof s.chat === "boolean"
+          ? s.chat
+          : DEFAULT_SERVICES.chatEnabled,
+
+    ratingsEnabled:
+      typeof s.ratingsEnabled === "boolean"
+        ? s.ratingsEnabled
+        : typeof s.ratings === "boolean"
+          ? s.ratings
+          : DEFAULT_SERVICES.ratingsEnabled,
+
+    winchRecoveryEnabled:
+      typeof s.winchRecoveryEnabled === "boolean"
+        ? s.winchRecoveryEnabled
+        : DEFAULT_SERVICES.winchRecoveryEnabled,
+
+    roadsideAssistanceEnabled:
+      typeof s.roadsideAssistanceEnabled === "boolean"
+        ? s.roadsideAssistanceEnabled
+        : DEFAULT_SERVICES.roadsideAssistanceEnabled,
+
+    jumpStartEnabled:
+      typeof s.jumpStartEnabled === "boolean"
+        ? s.jumpStartEnabled
+        : DEFAULT_SERVICES.jumpStartEnabled,
+
+    tyreChangeEnabled:
+      typeof s.tyreChangeEnabled === "boolean"
+        ? s.tyreChangeEnabled
+        : DEFAULT_SERVICES.tyreChangeEnabled,
+
+    fuelDeliveryEnabled:
+      typeof s.fuelDeliveryEnabled === "boolean"
+        ? s.fuelDeliveryEnabled
+        : DEFAULT_SERVICES.fuelDeliveryEnabled,
+
+    lockoutEnabled:
+      typeof s.lockoutEnabled === "boolean"
+        ? s.lockoutEnabled
+        : DEFAULT_SERVICES.lockoutEnabled,
+
+    // keep alias synced locally too (optional)
+    supportEnabled:
+      typeof s.supportEnabled === "boolean"
+        ? s.supportEnabled
+        : typeof emergency === "boolean"
+          ? emergency
+          : undefined,
   };
 }
 
-const DEFAULT_SERVICES: ServiceConfig["services"] = {
-  towing: true,
-  mechanic: true,
-  emergency: true,
-  insurance: false,
-  chat: true,
-  ratings: true,
-};
+async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers || {}),
+    },
+    credentials: "include",
+  });
 
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = (data && (data.message || data.error)) || `Request failed (${res.status})`;
+    throw new Error(msg);
+  }
+  return data as T;
+}
+
+// ============================
+// Page
+// ============================
 export default function CountryServicesPage() {
+  const [countryCode, setCountryCode] = useState("ZA");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const [countries, setCountries] = useState<Country[]>([]);
-  const [selectedCountryCode, setSelectedCountryCode] = useState<string>("");
+  const [config, setConfig] = useState<CountryServiceConfig | null>(null);
 
-  const [config, setConfig] = useState<ServiceConfig | null>(null);
+  const services = useMemo<ServiceFlags>(() => {
+    if (!config?.services) return DEFAULT_SERVICES;
+    return normalizeServicesFromApi(config.services);
+  }, [config]);
 
-  const selectedCountry = useMemo(() => {
-    return countries.find((c) => c.code === selectedCountryCode) || null;
-  }, [countries, selectedCountryCode]);
+  function setService(key: keyof ServiceFlags, value: boolean) {
+    setConfig((prev) => {
+      if (!prev) return prev;
 
-  async function loadCountries() {
-    const res = await fetch(`${API_BASE}/api/admin/countries`, {
-      method: "GET",
-      headers: authHeaders(),
-    });
+      const nextServices = {
+        ...normalizeServicesFromApi(prev.services),
+        [key]: value,
+      };
 
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data?.message || "Failed to load countries");
-    }
-
-    const data = await res.json();
-    const list: Country[] = Array.isArray(data?.countries) ? data.countries : [];
-    setCountries(list);
-
-    if (!selectedCountryCode && list.length > 0) {
-      setSelectedCountryCode(list[0].code);
-    }
-  }
-
-  async function loadCountryServiceConfig(countryCode: string) {
-    const res = await fetch(
-      `${API_BASE}/api/admin/country-services/${countryCode}`,
-      {
-        method: "GET",
-        headers: authHeaders({ "X-COUNTRY-CODE": countryCode }),
+      // keep alias synced for emergency/support
+      if (key === "emergencySupportEnabled") {
+        nextServices.supportEnabled = value;
       }
-    );
+      if (key === "supportEnabled") {
+        nextServices.emergencySupportEnabled = value as any;
+      }
 
-    const data = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      throw new Error(data?.message || "Failed to load service config");
-    }
-
-    const cfg: ServiceConfig | null = data?.config || null;
-
-    // if backend returns null, show default in UI
-    if (!cfg) {
-      setConfig({
-        _id: "local",
-        countryCode,
-        services: { ...DEFAULT_SERVICES },
-      });
-      return;
-    }
-
-    setConfig({
-      ...cfg,
-      services: {
-        ...DEFAULT_SERVICES,
-        ...(cfg.services || {}),
-      },
+      return {
+        ...prev,
+        services: nextServices,
+      };
     });
   }
 
-  async function init() {
+  async function loadCountryServiceConfig(cc: string) {
     setLoading(true);
-    setError(null);
     try {
-      await loadCountries();
+      const data = await fetchJson<ApiGetResponse>(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/admin/country-services/${cc}`
+      );
+
+      const cfg = data.config;
+      cfg.services = normalizeServicesFromApi(cfg.services);
+
+      setConfig(cfg);
     } catch (e: any) {
-      setError(e?.message || "Failed to load countries");
+      toast.error(e?.message || "Failed to load config");
+      setConfig({
+        countryCode: cc,
+        services: DEFAULT_SERVICES,
+      });
     } finally {
       setLoading(false);
     }
   }
 
   async function save() {
-    if (!selectedCountryCode || !config) return;
+    if (!config) return;
 
     setSaving(true);
-    setError(null);
-
     try {
       const payload = {
-        countryCode: selectedCountryCode,
-        services: config.services,
+        countryCode: config.countryCode,
+        services: normalizeServicesFromApi(config.services),
       };
 
-      const res = await fetch(`${API_BASE}/api/admin/country-services`, {
-        method: "PUT",
-        headers: authHeaders({ "X-COUNTRY-CODE": selectedCountryCode }),
-        body: JSON.stringify(payload),
-      });
+      const data = await fetchJson<ApiPutResponse>(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/admin/country-services`,
+        {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        }
+      );
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.message || "Failed to save");
+      // Apply server-returned canonical state
+      const cfg = data.config;
+      cfg.services = normalizeServicesFromApi(cfg.services);
 
-      // reload from backend so UI reflects real stored config
-      await loadCountryServiceConfig(selectedCountryCode);
+      setConfig(cfg);
+
+      toast.success(data.message || "Saved");
+      await loadCountryServiceConfig(countryCode);
     } catch (e: any) {
-      setError(e?.message || "Failed to save");
+      toast.error(e?.message || "Save failed");
     } finally {
       setSaving(false);
     }
   }
 
   useEffect(() => {
-    init();
+    loadCountryServiceConfig(countryCode);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [countryCode]);
 
-  useEffect(() => {
-    if (!selectedCountryCode) return;
-
-    setLoading(true);
-    setError(null);
-
-    loadCountryServiceConfig(selectedCountryCode)
-      .catch((e: any) => setError(e?.message || "Failed to load config"))
-      .finally(() => setLoading(false));
-  }, [selectedCountryCode]);
-
-  const services = config?.services || DEFAULT_SERVICES;
-
-  function setService(key: keyof ServiceConfig["services"], value: boolean) {
-    setConfig((prev) => {
-      const base =
-        prev ||
-        ({
-          _id: "local",
-          countryCode: selectedCountryCode,
-          services: { ...DEFAULT_SERVICES },
-        } as ServiceConfig);
-
-      return {
-        ...base,
-        services: {
-          ...base.services,
-          [key]: value,
-        },
-      };
-    });
-  }
+  const serviceCards: Array<{
+    key: keyof ServiceFlags;
+    title: string;
+    description: string;
+  }> = [
+    {
+      key: "towingEnabled",
+      title: "Towing",
+      description: "Enable towing jobs + tow truck provider flows",
+    },
+    {
+      key: "mechanicEnabled",
+      title: "Mechanic",
+      description: "Enable mechanic jobs + mechanic provider flows",
+    },
+    {
+      key: "emergencySupportEnabled",
+      title: "Emergency Support",
+      description: "Emergency roadside support service",
+    },
+    {
+      key: "insuranceEnabled",
+      title: "Insurance",
+      description: "Enable insurance partner booking flow (codes + invoicing)",
+    },
+    {
+      key: "chatEnabled",
+      title: "Chat",
+      description: "Enable in-app chat (customer ↔ provider)",
+    },
+    {
+      key: "ratingsEnabled",
+      title: "Ratings",
+      description: "Enable ratings system after job completion",
+    },
+  ];
 
   return (
-    <div style={{ padding: 20, maxWidth: 1100 }}>
-      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>
-        Country Services
-      </h1>
-      <p style={{ marginBottom: 18, opacity: 0.8 }}>
-        Enable / disable services per country (feature flags).
-      </p>
-
-      {error ? (
-        <div
-          style={{
-            background: "#ffefef",
-            border: "1px solid #ffbdbd",
-            padding: 12,
-            borderRadius: 8,
-            marginBottom: 16,
-            color: "#7a0000",
-          }}
-        >
-          {error}
+    <div className="p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold">Country Services</h1>
+          <p className="text-sm text-muted-foreground">
+            Enable / disable services per country (feature flags).
+          </p>
         </div>
-      ) : null}
 
-      <div
-        style={{
-          border: "1px solid #e5e7eb",
-          borderRadius: 12,
-          padding: 16,
-          background: "white",
-          marginBottom: 18,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            gap: 12,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          <div style={{ minWidth: 280 }}>
-            <label style={{ fontSize: 12, opacity: 0.8 }}>Country</label>
-            <select
-              value={selectedCountryCode}
-              onChange={(e) => setSelectedCountryCode(e.target.value)}
-              style={{
-                width: "100%",
-                padding: 10,
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-                background: "white",
-              }}
-            >
-              {countries.map((c) => (
-                <option key={c._id} value={c.code}>
-                  {c.code} — {c.name} {c.isActive ? "" : "(inactive)"}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div style={{ marginLeft: "auto", display: "flex", gap: 10 }}>
-            <button
-              onClick={() =>
-                selectedCountryCode && loadCountryServiceConfig(selectedCountryCode)
-              }
-              disabled={loading || saving}
-              style={{
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid #d1d5db",
-                background: "white",
-                cursor: "pointer",
-              }}
-            >
-              Reload
-            </button>
-
-            <button
-              onClick={save}
-              disabled={saving || loading || !selectedCountryCode}
-              style={{
-                padding: "10px 14px",
-                borderRadius: 10,
-                border: "1px solid #111827",
-                background: saving ? "#9ca3af" : "#111827",
-                color: "white",
-                cursor: saving ? "not-allowed" : "pointer",
-                fontWeight: 700,
-              }}
-            >
-              {saving ? "Saving..." : "Save"}
-            </button>
-          </div>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => loadCountryServiceConfig(countryCode)}
+            disabled={loading || saving}
+          >
+            Reload
+          </Button>
+          <Button onClick={save} disabled={loading || saving || !config}>
+            {saving ? "Saving..." : "Save"}
+          </Button>
         </div>
       </div>
 
-      <div
-        style={{
-          border: "1px solid #e5e7eb",
-          borderRadius: 12,
-          padding: 16,
-          background: "white",
-        }}
-      >
+      <Card className="p-4">
+        <div className="flex items-center gap-3">
+          <div className="text-sm font-medium">Country</div>
+          <select
+            className="border rounded-md px-3 py-2 text-sm"
+            value={countryCode}
+            onChange={(e) => setCountryCode(e.target.value)}
+            disabled={loading || saving}
+          >
+            <option value="ZA">ZA — South Africa</option>
+            {/* add more countries here */}
+          </select>
+        </div>
+      </Card>
+
+      <Card className="p-4 space-y-4">
+        <h2 className="text-lg font-semibold">Services for {countryCode}</h2>
+
         {loading ? (
-          <div style={{ padding: 16, opacity: 0.7 }}>Loading config...</div>
-        ) : !selectedCountry ? (
-          <div style={{ padding: 16, opacity: 0.7 }}>
-            No country selected.
-          </div>
+          <div className="text-sm text-muted-foreground">Loading...</div>
         ) : (
-          <>
-            <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>
-              Services for {selectedCountry.code} — {selectedCountry.name}
-            </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {serviceCards.map((s) => {
+              const value = !!services[s.key];
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                gap: 12,
-              }}
-            >
-              <ToggleRow
-                title="Towing"
-                description="Enable towing jobs + tow truck provider flows"
-                value={services.towing}
-                onChange={(v) => setService("towing", v)}
-              />
+              return (
+                <div
+                  key={String(s.key)}
+                  className="border rounded-xl p-4 flex items-center justify-between"
+                >
+                  <div>
+                    <div className="font-semibold">{s.title}</div>
+                    <div className="text-xs text-muted-foreground">{s.description}</div>
+                  </div>
 
-              <ToggleRow
-                title="Mechanic"
-                description="Enable mechanic jobs + mechanic provider flows"
-                value={services.mechanic}
-                onChange={(v) => setService("mechanic", v)}
-              />
-
-              <ToggleRow
-                title="Emergency Support"
-                description="Emergency roadside support service"
-                value={services.emergency}
-                onChange={(v) => setService("emergency", v)}
-              />
-
-              <ToggleRow
-                title="Insurance"
-                description="Enable insurance partner booking flow (codes + invoicing)"
-                value={services.insurance}
-                onChange={(v) => setService("insurance", v)}
-              />
-
-              <ToggleRow
-                title="Chat"
-                description="Enable in-app chat (customer ↔ provider)"
-                value={services.chat}
-                onChange={(v) => setService("chat", v)}
-              />
-
-              <ToggleRow
-                title="Ratings"
-                description="Enable ratings system after job completion"
-                value={services.ratings}
-                onChange={(v) => setService("ratings", v)}
-              />
-            </div>
-
-            <div style={{ marginTop: 18, opacity: 0.75, fontSize: 13 }}>
-              <b>Note:</b> Services are feature flags only. Backend must still
-              enforce restrictions (e.g. block towing requests if towing is off).
-            </div>
-          </>
+                  <div className="flex items-center gap-3">
+                    <div className="text-xs font-medium">{value ? "ON" : "OFF"}</div>
+                    <Checkbox
+                      checked={value}
+                      onCheckedChange={(v) => setService(s.key, !!v)}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         )}
-      </div>
-    </div>
-  );
-}
 
-function ToggleRow({
-  title,
-  description,
-  value,
-  onChange,
-}: {
-  title: string;
-  description: string;
-  value: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <div
-      style={{
-        border: "1px solid #e5e7eb",
-        borderRadius: 12,
-        padding: 14,
-        display: "flex",
-        gap: 12,
-        alignItems: "center",
-      }}
-    >
-      <div style={{ flex: 1 }}>
-        <div style={{ fontWeight: 800 }}>{title}</div>
-        <div style={{ fontSize: 13, opacity: 0.75 }}>{description}</div>
-      </div>
-
-      <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
-        <span style={{ fontSize: 12, opacity: 0.7 }}>
-          {value ? "ON" : "OFF"}
-        </span>
-        <input
-          type="checkbox"
-          checked={value}
-          onChange={(e) => onChange(e.target.checked)}
-          style={{ width: 20, height: 20 }}
-        />
-      </label>
+        <p className="text-xs text-muted-foreground pt-2">
+          Note: Services are feature flags only. Backend must still enforce restrictions
+          (e.g. block towing requests if towing is off).
+        </p>
+      </Card>
     </div>
   );
 }
