@@ -12,11 +12,24 @@ type Country = {
 
 type InsurancePartner = {
   _id: string;
-  countryCode: string;
+  countryCode?: string;
   name: string;
+
+  // ✅ NEW (Option A)
+  partnerCode?: string;
+
+  // legacy/older dashboard fields
   contactEmail?: string | null;
   contactPhone?: string | null;
   billingEmail?: string | null;
+
+  // newer backend fields (safe optional)
+  email?: string | null;
+  phone?: string | null;
+  logoUrl?: string | null;
+  description?: string | null;
+  countryCodes?: string[];
+
   isActive: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -24,10 +37,24 @@ type InsurancePartner = {
 
 type InsuranceCode = {
   _id: string;
-  partnerId: string;
+  partnerId?: string;
+  partner?: { _id?: string; name?: string; partnerCode?: string; code?: string };
+
   countryCode: string;
   code: string;
-  status: "ACTIVE" | "USED" | "EXPIRED" | "REVOKED";
+
+  // legacy dashboard status
+  status?: "ACTIVE" | "USED" | "EXPIRED" | "REVOKED";
+
+  // newer backend status fields
+  isActive?: boolean;
+  expiresAt?: string | null;
+  usage?: {
+    usedCount?: number;
+    maxUses?: number;
+    lastUsedAt?: string | null;
+  };
+
   usedByJobId?: string | null;
   usedAt?: string | null;
   createdAt?: string;
@@ -95,11 +122,12 @@ export default function InsurancePage() {
 
   const [codes, setCodes] = useState<InsuranceCode[]>([]);
   const [codeStatusFilter, setCodeStatusFilter] = useState<
-    "ALL" | InsuranceCode["status"]
+    "ALL" | "ACTIVE" | "USED" | "EXPIRED" | "REVOKED"
   >("ALL");
 
   // Create partner form
   const [newPartnerName, setNewPartnerName] = useState("");
+  const [newPartnerCode, setNewPartnerCode] = useState(""); // ✅ NEW
   const [newPartnerEmail, setNewPartnerEmail] = useState("");
   const [newPartnerPhone, setNewPartnerPhone] = useState("");
 
@@ -152,7 +180,10 @@ export default function InsurancePage() {
 
     if (!selectedPartnerId && list.length > 0) {
       setSelectedPartnerId(list[0]._id);
-    } else if (selectedPartnerId && !list.some((p) => p._id === selectedPartnerId)) {
+    } else if (
+      selectedPartnerId &&
+      !list.some((p) => p._id === selectedPartnerId)
+    ) {
       setSelectedPartnerId(list[0]?._id || "");
     }
   }
@@ -222,17 +253,41 @@ export default function InsurancePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPartnerId, selectedCountryCode]);
 
+  // ✅ Normalize code status for both legacy + newer backend formats
+  function normalizeCodeStatus(c: InsuranceCode): "ACTIVE" | "USED" | "EXPIRED" | "REVOKED" {
+    // legacy field
+    if (c.status) return c.status;
+
+    // newer backend: usage / isActive
+    const usedCount = c.usage?.usedCount || 0;
+    if (usedCount > 0) return "USED";
+
+    if (c.expiresAt) {
+      const exp = new Date(c.expiresAt).getTime();
+      if (Number.isFinite(exp) && Date.now() > exp) return "EXPIRED";
+    }
+
+    if (c.isActive === false) return "REVOKED";
+    return "ACTIVE";
+  }
+
   const filteredCodes = useMemo(() => {
     if (codeStatusFilter === "ALL") return codes;
-    return codes.filter((c) => c.status === codeStatusFilter);
+    return codes.filter((c) => normalizeCodeStatus(c) === codeStatusFilter);
   }, [codes, codeStatusFilter]);
 
   async function createPartner() {
     if (!selectedCountryCode) return;
 
     const name = newPartnerName.trim();
+    const partnerCode = newPartnerCode.trim().toUpperCase();
+
     if (!name) {
       setError("Partner name is required");
+      return;
+    }
+    if (!partnerCode) {
+      setError("Partner code is required (e.g. ABC, OUTSURANCE, DISCOVERY)");
       return;
     }
 
@@ -244,8 +299,20 @@ export default function InsurancePage() {
         method: "POST",
         headers: authHeaders({ "X-COUNTRY-CODE": selectedCountryCode }),
         body: JSON.stringify({
-          countryCode: selectedCountryCode,
+          // ✅ send new format (matches backend requirement)
           name,
+          partnerCode,
+
+          // ✅ also send legacy aliases (safe)
+          code: partnerCode,
+          countryCode: selectedCountryCode,
+          countryCodes: [selectedCountryCode],
+
+          // ✅ map dashboard fields -> backend fields
+          email: newPartnerEmail.trim() || null,
+          phone: newPartnerPhone.trim() || null,
+
+          // ✅ keep legacy keys too (if any old code reads these)
           contactEmail: newPartnerEmail.trim() || null,
           contactPhone: newPartnerPhone.trim() || null,
         }),
@@ -255,6 +322,7 @@ export default function InsurancePage() {
       if (!res.ok) throw new Error(data?.message || "Create partner failed");
 
       setNewPartnerName("");
+      setNewPartnerCode("");
       setNewPartnerEmail("");
       setNewPartnerPhone("");
 
@@ -273,11 +341,14 @@ export default function InsurancePage() {
     setError(null);
 
     try {
-      const res = await fetch(`${API_BASE}/api/admin/insurance/partners/${partnerId}`, {
-        method: "PUT",
-        headers: authHeaders({ "X-COUNTRY-CODE": selectedCountryCode }),
-        body: JSON.stringify({ isActive: nextActive }),
-      });
+      const res = await fetch(
+        `${API_BASE}/api/admin/insurance/partners/${partnerId}`,
+        {
+          method: "PATCH", // ✅ backend uses PATCH
+          headers: authHeaders({ "X-COUNTRY-CODE": selectedCountryCode }),
+          body: JSON.stringify({ isActive: nextActive }),
+        }
+      );
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.message || "Update partner failed");
@@ -303,15 +374,18 @@ export default function InsurancePage() {
     setError(null);
 
     try {
-      const res = await fetch(`${API_BASE}/api/admin/insurance/codes/generate`, {
-        method: "POST",
-        headers: authHeaders({ "X-COUNTRY-CODE": selectedCountryCode }),
-        body: JSON.stringify({
-          countryCode: selectedCountryCode,
-          partnerId: selectedPartnerId,
-          count,
-        }),
-      });
+      // ✅ backend path: /admin/partners/:partnerId/codes/generate
+      const res = await fetch(
+        `${API_BASE}/api/admin/insurance/partners/${selectedPartnerId}/codes/generate`,
+        {
+          method: "POST",
+          headers: authHeaders({ "X-COUNTRY-CODE": selectedCountryCode }),
+          body: JSON.stringify({
+            count,
+            countryCode: selectedCountryCode,
+          }),
+        }
+      );
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.message || "Generate codes failed");
@@ -331,17 +405,21 @@ export default function InsurancePage() {
     setError(null);
 
     try {
-      const res = await fetch(`${API_BASE}/api/admin/insurance/codes/${codeId}/revoke`, {
-        method: "POST",
-        headers: authHeaders({ "X-COUNTRY-CODE": selectedCountryCode }),
-      });
+      // ✅ backend path: PATCH /admin/codes/:id/disable
+      const res = await fetch(
+        `${API_BASE}/api/admin/insurance/codes/${codeId}/disable`,
+        {
+          method: "PATCH",
+          headers: authHeaders({ "X-COUNTRY-CODE": selectedCountryCode }),
+        }
+      );
 
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.message || "Revoke failed");
+      if (!res.ok) throw new Error(data?.message || "Disable failed");
 
       await loadCodes(selectedCountryCode, selectedPartnerId);
     } catch (e: any) {
-      setError(e?.message || "Revoke failed");
+      setError(e?.message || "Disable failed");
     } finally {
       setSaving(false);
     }
@@ -358,9 +436,9 @@ export default function InsurancePage() {
       const res = await fetch(
         `${API_BASE}/api/admin/insurance/invoice?countryCode=${encodeURIComponent(
           selectedCountryCode
-        )}&partnerId=${encodeURIComponent(selectedPartnerId)}&month=${encodeURIComponent(
-          invoiceMonth
-        )}`,
+        )}&partnerId=${encodeURIComponent(
+          selectedPartnerId
+        )}&month=${encodeURIComponent(invoiceMonth)}`,
         {
           method: "GET",
           headers: authHeaders({ "X-COUNTRY-CODE": selectedCountryCode }),
@@ -451,7 +529,9 @@ export default function InsurancePage() {
           >
             {partners.map((p) => (
               <option key={p._id} value={p._id}>
-                {p.name} {p.isActive ? "" : "(inactive)"}
+                {p.name}
+                {p.partnerCode ? ` (${p.partnerCode})` : ""}
+                {p.isActive ? "" : " (inactive)"}
               </option>
             ))}
           </select>
@@ -460,7 +540,9 @@ export default function InsurancePage() {
         <div style={{ marginLeft: "auto", display: "flex", gap: 10 }}>
           {selectedPartner ? (
             <button
-              onClick={() => togglePartnerActive(selectedPartner._id, !selectedPartner.isActive)}
+              onClick={() =>
+                togglePartnerActive(selectedPartner._id, !selectedPartner.isActive)
+              }
               disabled={saving}
               style={{
                 padding: "10px 12px",
@@ -497,6 +579,15 @@ export default function InsurancePage() {
                 value={newPartnerName}
                 onChange={(e) => setNewPartnerName(e.target.value)}
                 placeholder="Example: ABC Insurance"
+                style={inputStyle}
+              />
+            </Field>
+
+            <Field label="Partner code (required)">
+              <input
+                value={newPartnerCode}
+                onChange={(e) => setNewPartnerCode(e.target.value)}
+                placeholder="Example: ABC / OUTSURANCE / DISCOVERY"
                 style={inputStyle}
               />
             </Field>
@@ -669,9 +760,7 @@ export default function InsurancePage() {
               <div style={{ marginLeft: "auto", display: "flex", gap: 10 }}>
                 <select
                   value={codeStatusFilter}
-                  onChange={(e) =>
-                    setCodeStatusFilter(e.target.value as any)
-                  }
+                  onChange={(e) => setCodeStatusFilter(e.target.value as any)}
                   style={{
                     padding: "8px 10px",
                     borderRadius: 10,
@@ -695,50 +784,65 @@ export default function InsurancePage() {
               </div>
             ) : (
               <div style={{ maxHeight: 560, overflow: "auto" }}>
-                {filteredCodes.map((c) => (
-                  <div
-                    key={c._id}
-                    style={{
-                      padding: 12,
-                      borderBottom: "1px solid #f3f4f6",
-                      display: "flex",
-                      gap: 10,
-                      alignItems: "center",
-                    }}
-                  >
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 900, fontSize: 14 }}>{c.code}</div>
-                      <div style={{ fontSize: 12, opacity: 0.75 }}>
-                        Status: <b>{c.status}</b>{" "}
-                        {c.usedAt ? `• Used: ${new Date(c.usedAt).toLocaleString()}` : ""}
-                      </div>
-                      {c.usedByJobId ? (
-                        <div style={{ fontSize: 12, opacity: 0.75 }}>
-                          Job: {c.usedByJobId}
-                        </div>
-                      ) : null}
-                    </div>
+                {filteredCodes.map((c) => {
+                  const st = normalizeCodeStatus(c);
+                  const usedAt =
+                    c.usedAt ||
+                    c.usage?.lastUsedAt ||
+                    null;
 
-                    <button
-                      onClick={() => revokeCode(c._id)}
-                      disabled={saving || c.status !== "ACTIVE"}
+                  return (
+                    <div
+                      key={c._id}
                       style={{
-                        padding: "8px 10px",
-                        borderRadius: 10,
-                        border: "1px solid #ef4444",
-                        background: c.status === "ACTIVE" ? "#ef4444" : "#fca5a5",
-                        color: "white",
-                        fontWeight: 900,
-                        cursor:
-                          saving || c.status !== "ACTIVE"
-                            ? "not-allowed"
-                            : "pointer",
+                        padding: 12,
+                        borderBottom: "1px solid #f3f4f6",
+                        display: "flex",
+                        gap: 10,
+                        alignItems: "center",
                       }}
                     >
-                      Revoke
-                    </button>
-                  </div>
-                ))}
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 900, fontSize: 14 }}>{c.code}</div>
+                        <div style={{ fontSize: 12, opacity: 0.75 }}>
+                          Status: <b>{st}</b>{" "}
+                          {usedAt ? `• Used: ${new Date(usedAt).toLocaleString()}` : ""}
+                        </div>
+
+                        {c.usedByJobId ? (
+                          <div style={{ fontSize: 12, opacity: 0.75 }}>
+                            Job: {c.usedByJobId}
+                          </div>
+                        ) : null}
+
+                        {c.usage?.maxUses ? (
+                          <div style={{ fontSize: 12, opacity: 0.75 }}>
+                            Uses: {c.usage?.usedCount || 0}/{c.usage.maxUses}
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <button
+                        onClick={() => revokeCode(c._id)}
+                        disabled={saving || st !== "ACTIVE"}
+                        style={{
+                          padding: "8px 10px",
+                          borderRadius: 10,
+                          border: "1px solid #ef4444",
+                          background: st === "ACTIVE" ? "#ef4444" : "#fca5a5",
+                          color: "white",
+                          fontWeight: 900,
+                          cursor:
+                            saving || st !== "ACTIVE"
+                              ? "not-allowed"
+                              : "pointer",
+                        }}
+                      >
+                        Disable
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -821,7 +925,14 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+        marginBottom: 10,
+      }}
+    >
       <label style={{ fontSize: 12, opacity: 0.75 }}>{label}</label>
       {children}
     </div>
