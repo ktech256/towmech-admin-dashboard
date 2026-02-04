@@ -1,393 +1,568 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Card } from "@/components/ui/card";
-import { toast } from "sonner";
+import React, { useEffect, useMemo, useState } from "react";
 
-// ============================
-// Types
-// ============================
-type ServiceFlags = {
-  towingEnabled: boolean;
-  mechanicEnabled: boolean;
-  emergencySupportEnabled: boolean; // canonical
-  insuranceEnabled: boolean;
-  chatEnabled: boolean;
-  ratingsEnabled: boolean;
-
-  // extended (already supported by backend + model; safe to keep)
-  winchRecoveryEnabled: boolean;
-  roadsideAssistanceEnabled: boolean;
-  jumpStartEnabled: boolean;
-  tyreChangeEnabled: boolean;
-  fuelDeliveryEnabled: boolean;
-  lockoutEnabled: boolean;
-
-  // legacy alias (backend keeps in sync)
-  supportEnabled?: boolean;
+type Country = {
+  _id: string;
+  code: string;
+  name: string;
+  currency: string;
+  isActive: boolean;
 };
 
-type CountryServiceConfig = {
-  _id?: string;
+/**
+ * UI keys (what the dashboard uses in this page)
+ */
+type UiServices = {
+  towing: boolean;
+  mechanic: boolean;
+  emergency: boolean;
+
+  // future toggles
+  insurance: boolean;
+  chat: boolean;
+  ratings: boolean;
+
+  // extra (optional — if you later decide to show them)
+  winchRecovery?: boolean;
+  roadsideAssistance?: boolean;
+  jumpStart?: boolean;
+  tyreChange?: boolean;
+  fuelDelivery?: boolean;
+  lockout?: boolean;
+};
+
+/**
+ * What backend ACTUALLY stores/returns (canonical)
+ * from adminCountryServices.routes.js
+ */
+type ApiServices = {
+  towingEnabled?: boolean;
+  mechanicEnabled?: boolean;
+  emergencySupportEnabled?: boolean; // canonical
+  supportEnabled?: boolean; // legacy alias maintained by backend
+
+  insuranceEnabled?: boolean;
+  chatEnabled?: boolean;
+  ratingsEnabled?: boolean;
+
+  winchRecoveryEnabled?: boolean;
+  roadsideAssistanceEnabled?: boolean;
+  jumpStartEnabled?: boolean;
+  tyreChangeEnabled?: boolean;
+  fuelDeliveryEnabled?: boolean;
+  lockoutEnabled?: boolean;
+
+  // allow unknown keys without breaking
+  [key: string]: any;
+};
+
+type ServiceConfig = {
+  _id: string;
   countryCode: string;
-  services: ServiceFlags;
-  payments?: any;
-  createdAt?: string;
+
+  /**
+   * IMPORTANT:
+   * backend response returns "services" object with "*Enabled" keys.
+   * we keep it as "any" here and normalize into UiServices.
+   */
+  services: any;
+
   updatedAt?: string;
+  createdAt?: string;
 };
 
-type ApiGetResponse = { config: CountryServiceConfig };
-type ApiPutResponse = { message: string; config: CountryServiceConfig };
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  "http://localhost:5000";
 
-// ============================
-// Defaults (match backend defaults)
-// ============================
-const DEFAULT_SERVICES: ServiceFlags = {
-  towingEnabled: true,
-  mechanicEnabled: true,
-  emergencySupportEnabled: true,
-  insuranceEnabled: false,
-  chatEnabled: true,
-  ratingsEnabled: true,
+function authHeaders(extra: Record<string, string> = {}) {
+  const token =
+    typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
-  winchRecoveryEnabled: false,
-  roadsideAssistanceEnabled: false,
-  jumpStartEnabled: false,
-  tyreChangeEnabled: false,
-  fuelDeliveryEnabled: false,
-  lockoutEnabled: false,
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...extra,
+  };
+}
+
+/**
+ * UI defaults (what you want to show if backend missing keys)
+ */
+const DEFAULT_UI_SERVICES: UiServices = {
+  towing: true,
+  mechanic: true,
+  emergency: true,
+  insurance: false,
+  chat: true,
+  ratings: true,
 };
 
-// ============================
-// Helpers
-// ============================
-function normalizeServicesFromApi(input: any): ServiceFlags {
-  const s = input && typeof input === "object" ? input : {};
+/**
+ * ✅ Convert backend services (towingEnabled etc) -> UI services (towing etc)
+ * SAFE: supports both formats in case old data exists.
+ */
+function apiToUiServices(input: any): UiServices {
+  const s: ApiServices = input && typeof input === "object" ? input : {};
 
-  // Support legacy dashboard keys too (towing/mechanic/etc),
-  // but canonical is "*Enabled".
+  // emergency can arrive as emergencySupportEnabled OR supportEnabled OR emergency/emergencySupport
   const emergency =
     typeof s.emergencySupportEnabled === "boolean"
       ? s.emergencySupportEnabled
       : typeof s.supportEnabled === "boolean"
         ? s.supportEnabled
-        : typeof s.emergencySupport === "boolean"
-          ? s.emergencySupport
-          : typeof s.support === "boolean"
-            ? s.support
-            : DEFAULT_SERVICES.emergencySupportEnabled;
+        : typeof (s as any).emergencySupport === "boolean"
+          ? (s as any).emergencySupport
+          : typeof (s as any).support === "boolean"
+            ? (s as any).support
+            : typeof (s as any).emergency === "boolean"
+              ? (s as any).emergency
+              : DEFAULT_UI_SERVICES.emergency;
 
   return {
-    towingEnabled:
+    towing:
       typeof s.towingEnabled === "boolean"
         ? s.towingEnabled
-        : typeof s.towing === "boolean"
-          ? s.towing
-          : DEFAULT_SERVICES.towingEnabled,
+        : typeof (s as any).towing === "boolean"
+          ? (s as any).towing
+          : DEFAULT_UI_SERVICES.towing,
 
-    mechanicEnabled:
+    mechanic:
       typeof s.mechanicEnabled === "boolean"
         ? s.mechanicEnabled
-        : typeof s.mechanic === "boolean"
-          ? s.mechanic
-          : DEFAULT_SERVICES.mechanicEnabled,
+        : typeof (s as any).mechanic === "boolean"
+          ? (s as any).mechanic
+          : DEFAULT_UI_SERVICES.mechanic,
 
-    emergencySupportEnabled: emergency,
+    emergency,
 
-    insuranceEnabled:
+    insurance:
       typeof s.insuranceEnabled === "boolean"
         ? s.insuranceEnabled
-        : typeof s.insurance === "boolean"
-          ? s.insurance
-          : DEFAULT_SERVICES.insuranceEnabled,
+        : typeof (s as any).insurance === "boolean"
+          ? (s as any).insurance
+          : DEFAULT_UI_SERVICES.insurance,
 
-    chatEnabled:
+    chat:
       typeof s.chatEnabled === "boolean"
         ? s.chatEnabled
-        : typeof s.chat === "boolean"
-          ? s.chat
-          : DEFAULT_SERVICES.chatEnabled,
+        : typeof (s as any).chat === "boolean"
+          ? (s as any).chat
+          : DEFAULT_UI_SERVICES.chat,
 
-    ratingsEnabled:
+    ratings:
       typeof s.ratingsEnabled === "boolean"
         ? s.ratingsEnabled
-        : typeof s.ratings === "boolean"
-          ? s.ratings
-          : DEFAULT_SERVICES.ratingsEnabled,
+        : typeof (s as any).ratings === "boolean"
+          ? (s as any).ratings
+          : DEFAULT_UI_SERVICES.ratings,
 
-    winchRecoveryEnabled:
-      typeof s.winchRecoveryEnabled === "boolean"
-        ? s.winchRecoveryEnabled
-        : DEFAULT_SERVICES.winchRecoveryEnabled,
-
-    roadsideAssistanceEnabled:
-      typeof s.roadsideAssistanceEnabled === "boolean"
-        ? s.roadsideAssistanceEnabled
-        : DEFAULT_SERVICES.roadsideAssistanceEnabled,
-
-    jumpStartEnabled:
-      typeof s.jumpStartEnabled === "boolean"
-        ? s.jumpStartEnabled
-        : DEFAULT_SERVICES.jumpStartEnabled,
-
-    tyreChangeEnabled:
-      typeof s.tyreChangeEnabled === "boolean"
-        ? s.tyreChangeEnabled
-        : DEFAULT_SERVICES.tyreChangeEnabled,
-
-    fuelDeliveryEnabled:
-      typeof s.fuelDeliveryEnabled === "boolean"
-        ? s.fuelDeliveryEnabled
-        : DEFAULT_SERVICES.fuelDeliveryEnabled,
-
-    lockoutEnabled:
-      typeof s.lockoutEnabled === "boolean"
-        ? s.lockoutEnabled
-        : DEFAULT_SERVICES.lockoutEnabled,
-
-    // keep alias synced locally too (optional)
-    supportEnabled:
-      typeof s.supportEnabled === "boolean"
-        ? s.supportEnabled
-        : typeof emergency === "boolean"
-          ? emergency
-          : undefined,
+    // optional extras (if backend returns them)
+    winchRecovery:
+      typeof s.winchRecoveryEnabled === "boolean" ? s.winchRecoveryEnabled : undefined,
+    roadsideAssistance:
+      typeof s.roadsideAssistanceEnabled === "boolean" ? s.roadsideAssistanceEnabled : undefined,
+    jumpStart:
+      typeof s.jumpStartEnabled === "boolean" ? s.jumpStartEnabled : undefined,
+    tyreChange:
+      typeof s.tyreChangeEnabled === "boolean" ? s.tyreChangeEnabled : undefined,
+    fuelDelivery:
+      typeof s.fuelDeliveryEnabled === "boolean" ? s.fuelDeliveryEnabled : undefined,
+    lockout:
+      typeof s.lockoutEnabled === "boolean" ? s.lockoutEnabled : undefined,
   };
 }
 
-async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers || {}),
-    },
-    credentials: "include",
-  });
+/**
+ * ✅ Convert UI services (towing etc) -> backend patch (towingEnabled etc)
+ * This is the KEY fix: save the keys backend actually persists.
+ */
+function uiToApiServices(ui: UiServices): ApiServices {
+  return {
+    towingEnabled: !!ui.towing,
+    mechanicEnabled: !!ui.mechanic,
+    emergencySupportEnabled: !!ui.emergency,
+    // keep alias in sync (backend also does this, but safe to send both)
+    supportEnabled: !!ui.emergency,
 
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const msg = (data && (data.message || data.error)) || `Request failed (${res.status})`;
-    throw new Error(msg);
-  }
-  return data as T;
+    insuranceEnabled: !!ui.insurance,
+    chatEnabled: !!ui.chat,
+    ratingsEnabled: !!ui.ratings,
+
+    // optional extras (only if present)
+    ...(typeof ui.winchRecovery === "boolean"
+      ? { winchRecoveryEnabled: ui.winchRecovery }
+      : {}),
+    ...(typeof ui.roadsideAssistance === "boolean"
+      ? { roadsideAssistanceEnabled: ui.roadsideAssistance }
+      : {}),
+    ...(typeof ui.jumpStart === "boolean" ? { jumpStartEnabled: ui.jumpStart } : {}),
+    ...(typeof ui.tyreChange === "boolean" ? { tyreChangeEnabled: ui.tyreChange } : {}),
+    ...(typeof ui.fuelDelivery === "boolean"
+      ? { fuelDeliveryEnabled: ui.fuelDelivery }
+      : {}),
+    ...(typeof ui.lockout === "boolean" ? { lockoutEnabled: ui.lockout } : {}),
+  };
 }
 
-// ============================
-// Page
-// ============================
 export default function CountryServicesPage() {
-  const [countryCode, setCountryCode] = useState("ZA");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const [config, setConfig] = useState<CountryServiceConfig | null>(null);
+  const [countries, setCountries] = useState<Country[]>([]);
+  const [selectedCountryCode, setSelectedCountryCode] = useState<string>("");
 
-  const services = useMemo<ServiceFlags>(() => {
-    if (!config?.services) return DEFAULT_SERVICES;
-    return normalizeServicesFromApi(config.services);
-  }, [config]);
+  const [config, setConfig] = useState<ServiceConfig | null>(null);
 
-  function setService(key: keyof ServiceFlags, value: boolean) {
-    setConfig((prev) => {
-      if (!prev) return prev;
+  // UI services state (source of truth for toggles on this page)
+  const [uiServices, setUiServices] = useState<UiServices>({ ...DEFAULT_UI_SERVICES });
 
-      const nextServices = {
-        ...normalizeServicesFromApi(prev.services),
-        [key]: value,
-      };
+  const selectedCountry = useMemo(() => {
+    return countries.find((c) => c.code === selectedCountryCode) || null;
+  }, [countries, selectedCountryCode]);
 
-      // keep alias synced for emergency/support
-      if (key === "emergencySupportEnabled") {
-        nextServices.supportEnabled = value;
-      }
-      if (key === "supportEnabled") {
-        nextServices.emergencySupportEnabled = value as any;
-      }
+  async function loadCountries() {
+    const res = await fetch(`${API_BASE}/api/admin/countries`, {
+      method: "GET",
+      headers: authHeaders(),
+    });
 
-      return {
-        ...prev,
-        services: nextServices,
-      };
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data?.message || "Failed to load countries");
+    }
+
+    const data = await res.json();
+    const list: Country[] = Array.isArray(data?.countries) ? data.countries : [];
+    setCountries(list);
+
+    if (!selectedCountryCode && list.length > 0) {
+      setSelectedCountryCode(list[0].code);
+    }
+  }
+
+  async function loadCountryServiceConfig(countryCode: string) {
+    const res = await fetch(`${API_BASE}/api/admin/country-services/${countryCode}`, {
+      method: "GET",
+      headers: authHeaders({ "X-COUNTRY-CODE": countryCode }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      throw new Error(data?.message || "Failed to load service config");
+    }
+
+    const cfg: ServiceConfig | null = data?.config || null;
+
+    if (!cfg) {
+      // no config yet -> UI uses defaults
+      setConfig({
+        _id: "local",
+        countryCode,
+        services: {},
+      });
+      setUiServices({ ...DEFAULT_UI_SERVICES });
+      return;
+    }
+
+    // Store raw config (for metadata) but normalize services for UI
+    setConfig(cfg);
+    const normalizedUi = apiToUiServices(cfg.services);
+    setUiServices({
+      ...DEFAULT_UI_SERVICES,
+      ...normalizedUi,
     });
   }
 
-  async function loadCountryServiceConfig(cc: string) {
+  async function init() {
     setLoading(true);
+    setError(null);
     try {
-      const data = await fetchJson<ApiGetResponse>(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/admin/country-services/${cc}`
-      );
-
-      const cfg = data.config;
-      cfg.services = normalizeServicesFromApi(cfg.services);
-
-      setConfig(cfg);
+      await loadCountries();
     } catch (e: any) {
-      toast.error(e?.message || "Failed to load config");
-      setConfig({
-        countryCode: cc,
-        services: DEFAULT_SERVICES,
-      });
+      setError(e?.message || "Failed to load countries");
     } finally {
       setLoading(false);
     }
   }
 
   async function save() {
-    if (!config) return;
+    if (!selectedCountryCode) return;
 
     setSaving(true);
+    setError(null);
+
     try {
+      // ✅ IMPORTANT: send backend keys, not UI keys
       const payload = {
-        countryCode: config.countryCode,
-        services: normalizeServicesFromApi(config.services),
+        countryCode: selectedCountryCode,
+        services: uiToApiServices(uiServices),
       };
 
-      const data = await fetchJson<ApiPutResponse>(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/admin/country-services`,
-        {
-          method: "PUT",
-          body: JSON.stringify(payload),
-        }
-      );
+      const res = await fetch(`${API_BASE}/api/admin/country-services`, {
+        method: "PUT",
+        headers: authHeaders({ "X-COUNTRY-CODE": selectedCountryCode }),
+        body: JSON.stringify(payload),
+      });
 
-      // Apply server-returned canonical state
-      const cfg = data.config;
-      cfg.services = normalizeServicesFromApi(cfg.services);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || "Failed to save");
 
-      setConfig(cfg);
-
-      toast.success(data.message || "Saved");
-      await loadCountryServiceConfig(countryCode);
+      // ✅ reload so UI reflects stored config
+      await loadCountryServiceConfig(selectedCountryCode);
     } catch (e: any) {
-      toast.error(e?.message || "Save failed");
+      setError(e?.message || "Failed to save");
     } finally {
       setSaving(false);
     }
   }
 
   useEffect(() => {
-    loadCountryServiceConfig(countryCode);
+    init();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [countryCode]);
+  }, []);
 
-  const serviceCards: Array<{
-    key: keyof ServiceFlags;
-    title: string;
-    description: string;
-  }> = [
-    {
-      key: "towingEnabled",
-      title: "Towing",
-      description: "Enable towing jobs + tow truck provider flows",
-    },
-    {
-      key: "mechanicEnabled",
-      title: "Mechanic",
-      description: "Enable mechanic jobs + mechanic provider flows",
-    },
-    {
-      key: "emergencySupportEnabled",
-      title: "Emergency Support",
-      description: "Emergency roadside support service",
-    },
-    {
-      key: "insuranceEnabled",
-      title: "Insurance",
-      description: "Enable insurance partner booking flow (codes + invoicing)",
-    },
-    {
-      key: "chatEnabled",
-      title: "Chat",
-      description: "Enable in-app chat (customer ↔ provider)",
-    },
-    {
-      key: "ratingsEnabled",
-      title: "Ratings",
-      description: "Enable ratings system after job completion",
-    },
-  ];
+  useEffect(() => {
+    if (!selectedCountryCode) return;
+
+    setLoading(true);
+    setError(null);
+
+    loadCountryServiceConfig(selectedCountryCode)
+      .catch((e: any) => setError(e?.message || "Failed to load config"))
+      .finally(() => setLoading(false));
+  }, [selectedCountryCode]);
+
+  function setService(key: keyof UiServices, value: boolean) {
+    setUiServices((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  }
+
+  const services = uiServices;
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Country Services</h1>
-          <p className="text-sm text-muted-foreground">
-            Enable / disable services per country (feature flags).
-          </p>
-        </div>
+    <div style={{ padding: 20, maxWidth: 1100 }}>
+      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>
+        Country Services
+      </h1>
+      <p style={{ marginBottom: 18, opacity: 0.8 }}>
+        Enable / disable services per country (feature flags).
+      </p>
 
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() => loadCountryServiceConfig(countryCode)}
-            disabled={loading || saving}
-          >
-            Reload
-          </Button>
-          <Button onClick={save} disabled={loading || saving || !config}>
-            {saving ? "Saving..." : "Save"}
-          </Button>
+      {error ? (
+        <div
+          style={{
+            background: "#ffefef",
+            border: "1px solid #ffbdbd",
+            padding: 12,
+            borderRadius: 8,
+            marginBottom: 16,
+            color: "#7a0000",
+          }}
+        >
+          {error}
+        </div>
+      ) : null}
+
+      <div
+        style={{
+          border: "1px solid #e5e7eb",
+          borderRadius: 12,
+          padding: 16,
+          background: "white",
+          marginBottom: 18,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            gap: 12,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ minWidth: 280 }}>
+            <label style={{ fontSize: 12, opacity: 0.8 }}>Country</label>
+            <select
+              value={selectedCountryCode}
+              onChange={(e) => setSelectedCountryCode(e.target.value)}
+              style={{
+                width: "100%",
+                padding: 10,
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                background: "white",
+              }}
+            >
+              {countries.map((c) => (
+                <option key={c._id} value={c.code}>
+                  {c.code} — {c.name} {c.isActive ? "" : "(inactive)"}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ marginLeft: "auto", display: "flex", gap: 10 }}>
+            <button
+              onClick={() =>
+                selectedCountryCode && loadCountryServiceConfig(selectedCountryCode)
+              }
+              disabled={loading || saving}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #d1d5db",
+                background: "white",
+                cursor: "pointer",
+              }}
+            >
+              Reload
+            </button>
+
+            <button
+              onClick={save}
+              disabled={saving || loading || !selectedCountryCode}
+              style={{
+                padding: "10px 14px",
+                borderRadius: 10,
+                border: "1px solid #111827",
+                background: saving ? "#9ca3af" : "#111827",
+                color: "white",
+                cursor: saving ? "not-allowed" : "pointer",
+                fontWeight: 700,
+              }}
+            >
+              {saving ? "Saving..." : "Save"}
+            </button>
+          </div>
         </div>
       </div>
 
-      <Card className="p-4">
-        <div className="flex items-center gap-3">
-          <div className="text-sm font-medium">Country</div>
-          <select
-            className="border rounded-md px-3 py-2 text-sm"
-            value={countryCode}
-            onChange={(e) => setCountryCode(e.target.value)}
-            disabled={loading || saving}
-          >
-            <option value="ZA">ZA — South Africa</option>
-            {/* add more countries here */}
-          </select>
-        </div>
-      </Card>
-
-      <Card className="p-4 space-y-4">
-        <h2 className="text-lg font-semibold">Services for {countryCode}</h2>
-
+      <div
+        style={{
+          border: "1px solid #e5e7eb",
+          borderRadius: 12,
+          padding: 16,
+          background: "white",
+        }}
+      >
         {loading ? (
-          <div className="text-sm text-muted-foreground">Loading...</div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {serviceCards.map((s) => {
-              const value = !!services[s.key];
-
-              return (
-                <div
-                  key={String(s.key)}
-                  className="border rounded-xl p-4 flex items-center justify-between"
-                >
-                  <div>
-                    <div className="font-semibold">{s.title}</div>
-                    <div className="text-xs text-muted-foreground">{s.description}</div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <div className="text-xs font-medium">{value ? "ON" : "OFF"}</div>
-                    <Checkbox
-                      checked={value}
-                      onCheckedChange={(v) => setService(s.key, !!v)}
-                    />
-                  </div>
-                </div>
-              );
-            })}
+          <div style={{ padding: 16, opacity: 0.7 }}>Loading config...</div>
+        ) : !selectedCountry ? (
+          <div style={{ padding: 16, opacity: 0.7 }}>
+            No country selected.
           </div>
-        )}
+        ) : (
+          <>
+            <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>
+              Services for {selectedCountry.code} — {selectedCountry.name}
+            </h2>
 
-        <p className="text-xs text-muted-foreground pt-2">
-          Note: Services are feature flags only. Backend must still enforce restrictions
-          (e.g. block towing requests if towing is off).
-        </p>
-      </Card>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                gap: 12,
+              }}
+            >
+              <ToggleRow
+                title="Towing"
+                description="Enable towing jobs + tow truck provider flows"
+                value={services.towing}
+                onChange={(v) => setService("towing", v)}
+              />
+
+              <ToggleRow
+                title="Mechanic"
+                description="Enable mechanic jobs + mechanic provider flows"
+                value={services.mechanic}
+                onChange={(v) => setService("mechanic", v)}
+              />
+
+              <ToggleRow
+                title="Emergency Support"
+                description="Emergency roadside support service"
+                value={services.emergency}
+                onChange={(v) => setService("emergency", v)}
+              />
+
+              <ToggleRow
+                title="Insurance"
+                description="Enable insurance partner booking flow (codes + invoicing)"
+                value={services.insurance}
+                onChange={(v) => setService("insurance", v)}
+              />
+
+              <ToggleRow
+                title="Chat"
+                description="Enable in-app chat (customer ↔ provider)"
+                value={services.chat}
+                onChange={(v) => setService("chat", v)}
+              />
+
+              <ToggleRow
+                title="Ratings"
+                description="Enable ratings system after job completion"
+                value={services.ratings}
+                onChange={(v) => setService("ratings", v)}
+              />
+            </div>
+
+            <div style={{ marginTop: 18, opacity: 0.75, fontSize: 13 }}>
+              <b>Note:</b> Services are feature flags only. Backend must still
+              enforce restrictions (e.g. block towing requests if towing is off).
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ToggleRow({
+  title,
+  description,
+  value,
+  onChange,
+}: {
+  title: string;
+  description: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div
+      style={{
+        border: "1px solid #e5e7eb",
+        borderRadius: 12,
+        padding: 14,
+        display: "flex",
+        gap: 12,
+        alignItems: "center",
+      }}
+    >
+      <div style={{ flex: 1 }}>
+        <div style={{ fontWeight: 800 }}>{title}</div>
+        <div style={{ fontSize: 13, opacity: 0.75 }}>{description}</div>
+      </div>
+
+      <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        <span style={{ fontSize: 12, opacity: 0.7 }}>
+          {value ? "ON" : "OFF"}
+        </span>
+        <input
+          type="checkbox"
+          checked={!!value}
+          onChange={(e) => onChange(e.target.checked)}
+          style={{ width: 20, height: 20 }}
+        />
+      </label>
     </div>
   );
 }
