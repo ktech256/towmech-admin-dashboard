@@ -1,189 +1,133 @@
-// lib/api/insurance.ts
+// dashboard/lib/api/insurance.ts
 import api from "./axios";
 
 export type InsurancePartner = {
   _id: string;
-
-  name: string; // e.g. "Old Mutual", "Jubilee", etc
-  countryCode: string; // ZA / KE / UG / etc
-
-  isActive: boolean;
-
-  // optional branding / display
+  name: string;
+  partnerCode?: string;
+  email?: string | null;
+  phone?: string | null;
   logoUrl?: string | null;
-  supportEmail?: string | null;
-  supportPhone?: string | null;
-
-  // billing
-  billingCycle?: "MONTHLY" | "WEEKLY" | "CUSTOM";
-  billingEmail?: string | null;
-
+  description?: string | null;
+  countryCodes?: string[];
+  isActive: boolean;
   createdAt?: string;
   updatedAt?: string;
 };
 
 export type InsuranceCode = {
   _id: string;
-
-  partnerId: string;
-  partnerName?: string;
-
+  partner?: { _id?: string; name?: string; partnerCode?: string };
   countryCode: string;
-
-  code: string; // unique code given to client
-  isUsed: boolean;
-
-  usedByJobId?: string | null;
-  usedByCustomerId?: string | null;
-
+  code: string;
+  isActive?: boolean;
   expiresAt?: string | null;
-
+  usage?: {
+    usedCount?: number;
+    maxUses?: number;
+    lastUsedAt?: string | null;
+  };
   createdAt?: string;
-  updatedAt?: string;
 };
 
-export type InsuranceUsageSummary = {
+export type InvoiceSummary = {
   partnerId: string;
-  partnerName: string;
   countryCode: string;
-
-  periodStart: string;
-  periodEnd: string;
-
+  month: string;
+  currency: string;
   totalJobs: number;
-  totalDistanceKm?: number;
-  totalAmount?: number;
-
-  jobs: Array<{
+  totalAmount: number;
+  items: Array<{
     jobId: string;
     createdAt: string;
-    customerName?: string;
     pickupAddressText?: string | null;
     dropoffAddressText?: string | null;
-    providerName?: string | null;
-    estimatedDistanceKm?: number;
-    amount?: number;
-    currency?: string;
+    amount: number;
+    currency: string;
+    paidAmount?: number;
   }>;
 };
 
 /**
  * ============================
- * PARTNERS
+ * PARTNERS (ADMIN)
  * ============================
  */
 
-export async function getInsurancePartners(params?: {
-  countryCode?: string;
-  isActive?: boolean;
-}): Promise<InsurancePartner[]> {
-  const res = await api.get("/api/admin/insurance/partners", { params });
-  return res.data?.partners || [];
+export async function getInsurancePartners(params?: { countryCode?: string }) {
+  const res = await api.get("/admin/insurance/partners", { params });
+  return (res.data?.partners || []) as InsurancePartner[];
 }
 
 export async function createInsurancePartner(payload: {
   name: string;
-  countryCode: string;
+  partnerCode: string;
+  countryCodes: string[];
+  email?: string | null;
+  phone?: string | null;
   logoUrl?: string | null;
-  supportEmail?: string | null;
-  supportPhone?: string | null;
-  billingCycle?: "MONTHLY" | "WEEKLY" | "CUSTOM";
-  billingEmail?: string | null;
-}): Promise<InsurancePartner> {
-  const res = await api.post("/api/admin/insurance/partners", payload);
-  return res.data?.partner;
+  description?: string | null;
+  isActive?: boolean;
+}) {
+  const res = await api.post("/admin/insurance/partners", payload);
+  return res.data?.partner as InsurancePartner;
 }
 
 export async function updateInsurancePartner(
   partnerId: string,
   payload: Partial<{
     name: string;
-    countryCode: string;
-    isActive: boolean;
+    email: string | null;
+    phone: string | null;
     logoUrl: string | null;
-    supportEmail: string | null;
-    supportPhone: string | null;
-    billingCycle: "MONTHLY" | "WEEKLY" | "CUSTOM";
-    billingEmail: string | null;
+    description: string | null;
+    countryCodes: string[];
+    isActive: boolean;
   }>
-): Promise<InsurancePartner> {
-  const res = await api.patch(`/api/admin/insurance/partners/${partnerId}`, payload);
-  return res.data?.partner;
-}
-
-export async function setInsurancePartnerActive(
-  partnerId: string,
-  isActive: boolean
-): Promise<InsurancePartner> {
-  const res = await api.patch(`/api/admin/insurance/partners/${partnerId}/active`, { isActive });
-  return res.data?.partner;
-}
-
-export async function deleteInsurancePartner(partnerId: string): Promise<{ ok: boolean }> {
-  const res = await api.delete(`/api/admin/insurance/partners/${partnerId}`);
-  return { ok: !!res.data?.ok };
+) {
+  const res = await api.patch(`/admin/insurance/partners/${partnerId}`, payload);
+  return res.data?.partner as InsurancePartner;
 }
 
 /**
  * ============================
- * CODES
+ * CODES (ADMIN)
  * ============================
  */
 
-export async function getInsuranceCodes(params?: {
-  partnerId?: string;
-  countryCode?: string;
-  isUsed?: boolean;
-}): Promise<InsuranceCode[]> {
-  const res = await api.get("/api/admin/insurance/codes", { params });
-  return res.data?.codes || [];
+export async function getInsuranceCodes(params: { partnerId: string; countryCode: string }) {
+  const res = await api.get("/admin/insurance/codes", { params });
+  return (res.data?.codes || []) as InsuranceCode[];
 }
 
 export async function generateInsuranceCodes(payload: {
   partnerId: string;
-  quantity: number; // how many codes to generate
-  expiresAt?: string | null;
-}): Promise<{ codes: InsuranceCode[] }> {
-  const res = await api.post("/api/admin/insurance/codes/generate", payload);
-  return { codes: res.data?.codes || [] };
-}
-
-export async function revokeInsuranceCode(codeId: string): Promise<{ ok: boolean }> {
-  const res = await api.delete(`/api/admin/insurance/codes/${codeId}`);
-  return { ok: !!res.data?.ok };
-}
-
-/**
- * ============================
- * USAGE + INVOICING
- * ============================
- */
-
-export async function getInsuranceUsageSummary(params: {
-  partnerId: string;
-  periodStart: string; // ISO date
-  periodEnd: string; // ISO date
-}): Promise<InsuranceUsageSummary> {
-  const res = await api.get("/api/admin/insurance/usage-summary", { params });
-  return res.data?.summary;
-}
-
-/**
- * ============================
- * PUBLIC (APP)
- * ============================
- */
-
-export async function getPublicInsurancePartners(countryCode: string): Promise<InsurancePartner[]> {
-  const res = await api.get("/api/insurance/partners", { params: { countryCode } });
-  return res.data?.partners || [];
-}
-
-export async function validateInsuranceCode(payload: {
   countryCode: string;
-  partnerId: string;
-  code: string;
-}): Promise<{ valid: boolean; message?: string }> {
-  const res = await api.post("/api/insurance/validate-code", payload);
+  count: number;
+  length?: number;
+  expiresInDays?: number;
+  maxUses?: number;
+}) {
+  const res = await api.post("/admin/insurance/codes/generate", payload);
   return res.data;
+}
+
+export async function disableInsuranceCode(codeId: string) {
+  const res = await api.patch(`/admin/insurance/codes/${codeId}/disable`);
+  return res.data;
+}
+
+/**
+ * ============================
+ * INVOICE (ADMIN)
+ * ============================
+ */
+
+export async function getInsuranceInvoice(params: {
+  partnerId: string;
+  countryCode: string;
+  month: string; // YYYY-MM
+}) {
+  const res = await api.get("/admin/insurance/invoice", { params });
+  return res.data?.invoice as InvoiceSummary;
 }
