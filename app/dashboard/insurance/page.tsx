@@ -1,6 +1,19 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import {
+  createPartner,
+  disableCode,
+  downloadInvoicePdf,
+  generateCodes,
+  getCodes,
+  getInvoice,
+  getPartners,
+  updatePartner,
+  type InsuranceCode,
+  type InsurancePartner,
+  type InvoiceResponse,
+} from "@/lib/api/insurance";
 
 type Country = {
   _id: string;
@@ -8,73 +21,6 @@ type Country = {
   name: string;
   currency: string;
   isActive: boolean;
-};
-
-type InsurancePartner = {
-  _id: string;
-  countryCode?: string;
-  name: string;
-
-  // Option A: partnerCode input on dashboard
-  partnerCode?: string;
-
-  // legacy/older dashboard fields
-  contactEmail?: string | null;
-  contactPhone?: string | null;
-  billingEmail?: string | null;
-
-  // newer backend fields (safe optional)
-  email?: string | null;
-  phone?: string | null;
-  logoUrl?: string | null;
-  description?: string | null;
-  countryCodes?: string[];
-
-  isActive: boolean;
-  createdAt?: string;
-  updatedAt?: string;
-};
-
-type InsuranceCode = {
-  _id: string;
-  partnerId?: string;
-  partner?: { _id?: string; name?: string; partnerCode?: string; code?: string };
-
-  countryCode: string;
-  code: string;
-
-  // legacy dashboard status
-  status?: "ACTIVE" | "USED" | "EXPIRED" | "REVOKED";
-
-  // newer backend status fields
-  isActive?: boolean;
-  expiresAt?: string | null;
-  usage?: {
-    usedCount?: number;
-    maxUses?: number;
-    lastUsedAt?: string | null;
-  };
-
-  usedByJobId?: string | null;
-  usedAt?: string | null;
-  createdAt?: string;
-};
-
-type InvoiceSummary = {
-  partnerId: string;
-  countryCode: string;
-  month: string; // YYYY-MM
-  currency: string;
-  totalJobs: number;
-  totalAmount: number;
-  items: Array<{
-    jobId: string;
-    createdAt: string;
-    pickupAddressText?: string | null;
-    dropoffAddressText?: string | null;
-    amount: number;
-    currency: string;
-  }>;
 };
 
 const API_BASE =
@@ -106,6 +52,14 @@ const MONTHS = (() => {
   return list;
 })();
 
+function todayYmd() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 export default function InsurancePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -127,7 +81,7 @@ export default function InsurancePage() {
     "ALL" | "ACTIVE" | "USED" | "EXPIRED" | "REVOKED"
   >("ALL");
 
-  // Create partner form
+  // Create partner
   const [newPartnerName, setNewPartnerName] = useState("");
   const [newPartnerCode, setNewPartnerCode] = useState("");
   const [newPartnerEmail, setNewPartnerEmail] = useState("");
@@ -136,9 +90,16 @@ export default function InsurancePage() {
   // Generate codes
   const [generateCount, setGenerateCount] = useState<number>(50);
 
-  // Invoice
+  // Invoice filters
+  const [invoiceMode, setInvoiceMode] = useState<"MONTH" | "RANGE">("MONTH");
   const [invoiceMonth, setInvoiceMonth] = useState<string>(MONTHS[0]);
-  const [invoice, setInvoice] = useState<InvoiceSummary | null>(null);
+
+  const [fromDate, setFromDate] = useState<string>(todayYmd());
+  const [toDate, setToDate] = useState<string>(todayYmd());
+
+  const [providerIdFilter, setProviderIdFilter] = useState<string>("");
+
+  const [invoice, setInvoice] = useState<InvoiceResponse | null>(null);
 
   async function loadCountries() {
     const res = await fetch(`${API_BASE}/api/admin/countries`, {
@@ -155,51 +116,6 @@ export default function InsurancePage() {
     if (!selectedCountryCode && list.length > 0) {
       setSelectedCountryCode(list[0].code);
     }
-  }
-
-  async function loadPartners(countryCode: string) {
-    const res = await fetch(
-      `${API_BASE}/api/admin/insurance/partners?countryCode=${encodeURIComponent(countryCode)}`,
-      {
-        method: "GET",
-        headers: authHeaders({ "X-COUNTRY-CODE": countryCode }),
-      }
-    );
-
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data?.message || "Failed to load partners");
-
-    const list: InsurancePartner[] = Array.isArray(data?.partners) ? data.partners : [];
-    setPartners(list);
-
-    if (!selectedPartnerId && list.length > 0) {
-      setSelectedPartnerId(list[0]._id);
-    } else if (selectedPartnerId && !list.some((p) => p._id === selectedPartnerId)) {
-      setSelectedPartnerId(list[0]?._id || "");
-    }
-  }
-
-  async function loadCodes(countryCode: string, partnerId: string) {
-    if (!partnerId) {
-      setCodes([]);
-      return;
-    }
-
-    const res = await fetch(
-      `${API_BASE}/api/admin/insurance/codes?countryCode=${encodeURIComponent(
-        countryCode
-      )}&partnerId=${encodeURIComponent(partnerId)}`,
-      {
-        method: "GET",
-        headers: authHeaders({ "X-COUNTRY-CODE": countryCode }),
-      }
-    );
-
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data?.message || "Failed to load codes");
-
-    const list: InsuranceCode[] = Array.isArray(data?.codes) ? data.codes : [];
-    setCodes(list);
   }
 
   async function init() {
@@ -221,11 +137,17 @@ export default function InsurancePage() {
 
   useEffect(() => {
     if (!selectedCountryCode) return;
-
     setLoading(true);
     setError(null);
 
-    loadPartners(selectedCountryCode)
+    getPartners(selectedCountryCode)
+      .then((list) => {
+        setPartners(list);
+        if (!selectedPartnerId && list.length > 0) setSelectedPartnerId(list[0]._id);
+        if (selectedPartnerId && !list.some((p) => p._id === selectedPartnerId)) {
+          setSelectedPartnerId(list[0]?._id || "");
+        }
+      })
       .catch((e: any) => setError(e?.message || "Failed to load partners"))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -233,19 +155,17 @@ export default function InsurancePage() {
 
   useEffect(() => {
     if (!selectedCountryCode || !selectedPartnerId) return;
-
     setLoading(true);
     setError(null);
 
-    loadCodes(selectedCountryCode, selectedPartnerId)
+    getCodes(selectedCountryCode, selectedPartnerId)
+      .then((list) => setCodes(list))
       .catch((e: any) => setError(e?.message || "Failed to load codes"))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPartnerId, selectedCountryCode]);
 
   function normalizeCodeStatus(c: InsuranceCode): "ACTIVE" | "USED" | "EXPIRED" | "REVOKED" {
-    if (c.status) return c.status;
-
     const usedCount = c.usage?.usedCount || 0;
     if (usedCount > 0) return "USED";
 
@@ -263,52 +183,35 @@ export default function InsurancePage() {
     return codes.filter((c) => normalizeCodeStatus(c) === codeStatusFilter);
   }, [codes, codeStatusFilter]);
 
-  async function createPartner() {
+  async function onCreatePartner() {
     if (!selectedCountryCode) return;
 
     const name = newPartnerName.trim();
     const partnerCode = newPartnerCode.trim().toUpperCase();
 
-    if (!name) {
-      setError("Partner name is required");
-      return;
-    }
-    if (!partnerCode) {
-      setError("Partner code is required (e.g. ABC, OUTSURANCE, DISCOVERY)");
-      return;
-    }
+    if (!name) return setError("Partner name is required");
+    if (!partnerCode) return setError("Partner code is required");
 
     setSaving(true);
     setError(null);
 
     try {
-      const res = await fetch(`${API_BASE}/api/admin/insurance/partners`, {
-        method: "POST",
-        headers: authHeaders({ "X-COUNTRY-CODE": selectedCountryCode }),
-        body: JSON.stringify({
-          name,
-          partnerCode,
-          email: newPartnerEmail.trim() || null,
-          phone: newPartnerPhone.trim() || null,
-
-          // safe aliases (won't break if ignored)
-          countryCodes: [selectedCountryCode],
-          countryCode: selectedCountryCode,
-          code: partnerCode,
-          contactEmail: newPartnerEmail.trim() || null,
-          contactPhone: newPartnerPhone.trim() || null,
-        }),
+      await createPartner(selectedCountryCode, {
+        name,
+        partnerCode,
+        email: newPartnerEmail.trim() || null,
+        phone: newPartnerPhone.trim() || null,
+        countryCodes: [selectedCountryCode],
       });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.message || "Create partner failed");
 
       setNewPartnerName("");
       setNewPartnerCode("");
       setNewPartnerEmail("");
       setNewPartnerPhone("");
 
-      await loadPartners(selectedCountryCode);
+      const list = await getPartners(selectedCountryCode);
+      setPartners(list);
+      if (list.length > 0) setSelectedPartnerId(list[0]._id);
     } catch (e: any) {
       setError(e?.message || "Create partner failed");
     } finally {
@@ -318,21 +221,12 @@ export default function InsurancePage() {
 
   async function togglePartnerActive(partnerId: string, nextActive: boolean) {
     if (!selectedCountryCode) return;
-
     setSaving(true);
     setError(null);
-
     try {
-      const res = await fetch(`${API_BASE}/api/admin/insurance/partners/${partnerId}`, {
-        method: "PATCH",
-        headers: authHeaders({ "X-COUNTRY-CODE": selectedCountryCode }),
-        body: JSON.stringify({ isActive: nextActive }),
-      });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.message || "Update partner failed");
-
-      await loadPartners(selectedCountryCode);
+      await updatePartner(selectedCountryCode, partnerId, { isActive: nextActive });
+      const list = await getPartners(selectedCountryCode);
+      setPartners(list);
     } catch (e: any) {
       setError(e?.message || "Update partner failed");
     } finally {
@@ -340,35 +234,24 @@ export default function InsurancePage() {
     }
   }
 
-  async function generateCodes() {
+  async function onGenerateCodes() {
     if (!selectedCountryCode || !selectedPartnerId) return;
 
     const count = Number(generateCount || 0);
-    if (!count || count < 1 || count > 5000) {
-      setError("Enter a valid number of codes (1 - 5000)");
-      return;
-    }
+    if (!count || count < 1 || count > 5000) return setError("Enter a valid number (1 - 5000)");
 
     setSaving(true);
     setError(null);
 
     try {
-      // ✅ Matches CURRENT backend zip route:
-      // POST /api/admin/insurance/codes/generate  (partnerId in body)
-      const res = await fetch(`${API_BASE}/api/admin/insurance/codes/generate`, {
-        method: "POST",
-        headers: authHeaders({ "X-COUNTRY-CODE": selectedCountryCode }),
-        body: JSON.stringify({
-          partnerId: selectedPartnerId,
-          countryCode: selectedCountryCode,
-          count,
-        }),
+      await generateCodes(selectedCountryCode, {
+        partnerId: selectedPartnerId,
+        countryCode: selectedCountryCode,
+        count,
       });
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.message || "Generate codes failed");
-
-      await loadCodes(selectedCountryCode, selectedPartnerId);
+      const list = await getCodes(selectedCountryCode, selectedPartnerId);
+      setCodes(list);
     } catch (e: any) {
       setError(e?.message || "Generate codes failed");
     } finally {
@@ -376,24 +259,14 @@ export default function InsurancePage() {
     }
   }
 
-  async function revokeCode(codeId: string) {
+  async function onDisableCode(codeId: string) {
     if (!selectedCountryCode) return;
-
     setSaving(true);
     setError(null);
-
     try {
-      // ✅ You must add this route in backend:
-      // PATCH /api/admin/insurance/codes/:id/disable
-      const res = await fetch(`${API_BASE}/api/admin/insurance/codes/${codeId}/disable`, {
-        method: "PATCH",
-        headers: authHeaders({ "X-COUNTRY-CODE": selectedCountryCode }),
-      });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.message || "Disable failed");
-
-      await loadCodes(selectedCountryCode, selectedPartnerId);
+      await disableCode(selectedCountryCode, codeId);
+      const list = await getCodes(selectedCountryCode, selectedPartnerId);
+      setCodes(list);
     } catch (e: any) {
       setError(e?.message || "Disable failed");
     } finally {
@@ -401,7 +274,7 @@ export default function InsurancePage() {
     }
   }
 
-  async function loadInvoice() {
+  async function onLoadInvoice() {
     if (!selectedCountryCode || !selectedPartnerId) return;
 
     setSaving(true);
@@ -409,24 +282,16 @@ export default function InsurancePage() {
     setInvoice(null);
 
     try {
-      // ✅ You must add this route in backend:
-      // GET /api/admin/insurance/invoice?countryCode=ZA&partnerId=...&month=YYYY-MM
-      const res = await fetch(
-        `${API_BASE}/api/admin/insurance/invoice?countryCode=${encodeURIComponent(
-          selectedCountryCode
-        )}&partnerId=${encodeURIComponent(selectedPartnerId)}&month=${encodeURIComponent(
-          invoiceMonth
-        )}`,
-        {
-          method: "GET",
-          headers: authHeaders({ "X-COUNTRY-CODE": selectedCountryCode }),
-        }
-      );
+      const invoice = await getInvoice({
+        countryCode: selectedCountryCode,
+        partnerId: selectedPartnerId,
+        month: invoiceMode === "MONTH" ? invoiceMonth : undefined,
+        from: invoiceMode === "RANGE" ? fromDate : undefined,
+        to: invoiceMode === "RANGE" ? toDate : undefined,
+        providerId: providerIdFilter.trim() || undefined,
+      });
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.message || "Invoice fetch failed");
-
-      setInvoice(data?.invoice || null);
+      setInvoice(invoice);
     } catch (e: any) {
       setError(e?.message || "Invoice fetch failed");
     } finally {
@@ -434,12 +299,54 @@ export default function InsurancePage() {
     }
   }
 
+  async function onDownloadPdf() {
+    if (!selectedCountryCode || !selectedPartnerId) return;
+    setSaving(true);
+    setError(null);
+
+    try {
+      const blob = await downloadInvoicePdf({
+        countryCode: selectedCountryCode,
+        partnerId: selectedPartnerId,
+        month: invoiceMode === "MONTH" ? invoiceMonth : undefined,
+        from: invoiceMode === "RANGE" ? fromDate : undefined,
+        to: invoiceMode === "RANGE" ? toDate : undefined,
+        providerId: providerIdFilter.trim() || undefined,
+      });
+
+      // Trigger browser download
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+
+      const label =
+        invoiceMode === "MONTH"
+          ? `invoice-${selectedCountryCode}-${invoiceMonth}.pdf`
+          : `invoice-${selectedCountryCode}-${fromDate}-to-${toDate}.pdf`;
+
+      a.download = label;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      setError(e?.message || "PDF download failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const currency = useMemo(() => {
+    const c = countries.find((x) => x.code === selectedCountryCode);
+    return c?.currency || "ZAR";
+  }, [countries, selectedCountryCode]);
+
   return (
-    <div style={{ padding: 20, maxWidth: 1400 }}>
+    <div style={{ padding: 20, maxWidth: 1500 }}>
       <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 8 }}>Insurance Partners</h1>
       <p style={{ opacity: 0.8, marginBottom: 18 }}>
-        Manage insurance partners, generate unique codes per partner, and track monthly usage for
-        invoicing (no booking fee payments for insurance jobs).
+        Partners, codes, and insurance-job invoices. Generate invoices by Month or by Date Range,
+        filter by Provider, and export PDF (when enabled on backend).
       </p>
 
       {error ? (
@@ -457,6 +364,7 @@ export default function InsurancePage() {
         </div>
       ) : null}
 
+      {/* Header controls */}
       <div
         style={{
           border: "1px solid #e5e7eb",
@@ -475,7 +383,7 @@ export default function InsurancePage() {
           <select
             value={selectedCountryCode}
             onChange={(e) => setSelectedCountryCode(e.target.value)}
-            style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #d1d5db" }}
+            style={inputStyle}
           >
             {countries.map((c) => (
               <option key={c._id} value={c.code}>
@@ -485,12 +393,12 @@ export default function InsurancePage() {
           </select>
         </div>
 
-        <div style={{ minWidth: 360 }}>
+        <div style={{ minWidth: 420 }}>
           <label style={{ fontSize: 12, opacity: 0.75 }}>Partner</label>
           <select
             value={selectedPartnerId}
             onChange={(e) => setSelectedPartnerId(e.target.value)}
-            style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #d1d5db" }}
+            style={inputStyle}
           >
             {partners.map((p) => (
               <option key={p._id} value={p._id}>
@@ -507,13 +415,7 @@ export default function InsurancePage() {
             <button
               onClick={() => togglePartnerActive(selectedPartner._id, !selectedPartner.isActive)}
               disabled={saving}
-              style={{
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid #d1d5db",
-                background: "white",
-                cursor: "pointer",
-              }}
+              style={secondaryBtn}
             >
               {selectedPartner.isActive ? "Disable partner" : "Enable partner"}
             </button>
@@ -521,11 +423,11 @@ export default function InsurancePage() {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "420px 1fr", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "440px 1fr", gap: 16 }}>
+        {/* Left column */}
         <div style={{ display: "grid", gap: 16 }}>
-          <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, background: "white" }}>
-            <h2 style={{ fontSize: 16, fontWeight: 900, marginBottom: 10 }}>Create Partner</h2>
-
+          {/* Create partner */}
+          <Card title="Create Partner">
             <Field label="Partner name">
               <input
                 value={newPartnerName}
@@ -562,28 +464,13 @@ export default function InsurancePage() {
               />
             </Field>
 
-            <button
-              onClick={createPartner}
-              disabled={saving || !selectedCountryCode}
-              style={{
-                marginTop: 10,
-                width: "100%",
-                padding: "12px 14px",
-                borderRadius: 10,
-                border: "1px solid #111827",
-                background: saving ? "#9ca3af" : "#111827",
-                color: "white",
-                fontWeight: 900,
-                cursor: saving ? "not-allowed" : "pointer",
-              }}
-            >
+            <button onClick={onCreatePartner} disabled={saving || !selectedCountryCode} style={primaryBtn}>
               {saving ? "Saving..." : "Create Partner"}
             </button>
-          </div>
+          </Card>
 
-          <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, background: "white" }}>
-            <h2 style={{ fontSize: 16, fontWeight: 900, marginBottom: 10 }}>Generate Codes</h2>
-
+          {/* Generate codes */}
+          <Card title="Generate Codes">
             <Field label="Number of codes">
               <input
                 type="number"
@@ -595,74 +482,90 @@ export default function InsurancePage() {
               />
             </Field>
 
-            <button
-              onClick={generateCodes}
-              disabled={saving || !selectedPartnerId}
-              style={{
-                marginTop: 10,
-                width: "100%",
-                padding: "12px 14px",
-                borderRadius: 10,
-                border: "1px solid #2563eb",
-                background: saving ? "#93c5fd" : "#2563eb",
-                color: "white",
-                fontWeight: 900,
-                cursor: saving ? "not-allowed" : "pointer",
-              }}
-            >
+            <button onClick={onGenerateCodes} disabled={saving || !selectedPartnerId} style={blueBtn}>
               {saving ? "Working..." : "Generate Codes"}
             </button>
 
             <div style={{ marginTop: 10, fontSize: 12, opacity: 0.75 }}>
-              Codes are unique per partner + country. A code from Partner A cannot be used when Partner B is selected.
+              Codes are unique per partner + country.
             </div>
-          </div>
+          </Card>
 
-          <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, background: "white" }}>
-            <h2 style={{ fontSize: 16, fontWeight: 900, marginBottom: 10 }}>Monthly Invoice</h2>
-
-            <Field label="Month">
-              <select value={invoiceMonth} onChange={(e) => setInvoiceMonth(e.target.value)} style={inputStyle}>
-                {MONTHS.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
+          {/* Invoice */}
+          <Card title="Invoice Generation">
+            <Field label="Mode">
+              <select
+                value={invoiceMode}
+                onChange={(e) => setInvoiceMode(e.target.value as any)}
+                style={inputStyle}
+              >
+                <option value="MONTH">Month (YYYY-MM)</option>
+                <option value="RANGE">Date range (From → To)</option>
               </select>
             </Field>
 
-            <button
-              onClick={loadInvoice}
-              disabled={saving || !selectedPartnerId}
-              style={{
-                marginTop: 10,
-                width: "100%",
-                padding: "12px 14px",
-                borderRadius: 10,
-                border: "1px solid #10b981",
-                background: saving ? "#86efac" : "#10b981",
-                color: "white",
-                fontWeight: 900,
-                cursor: saving ? "not-allowed" : "pointer",
-              }}
-            >
-              {saving ? "Loading..." : "Generate Invoice Summary"}
-            </button>
+            {invoiceMode === "MONTH" ? (
+              <Field label="Month">
+                <select value={invoiceMonth} onChange={(e) => setInvoiceMonth(e.target.value)} style={inputStyle}>
+                  {MONTHS.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <Field label="From">
+                  <input value={fromDate} onChange={(e) => setFromDate(e.target.value)} type="date" style={inputStyle} />
+                </Field>
+                <Field label="To">
+                  <input value={toDate} onChange={(e) => setToDate(e.target.value)} type="date" style={inputStyle} />
+                </Field>
+              </div>
+            )}
+
+            <Field label="Filter by Provider/Driver ID (optional)">
+              <input
+                value={providerIdFilter}
+                onChange={(e) => setProviderIdFilter(e.target.value)}
+                placeholder="paste providerId here"
+                style={inputStyle}
+              />
+            </Field>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <button onClick={onLoadInvoice} disabled={saving || !selectedPartnerId} style={greenBtn}>
+                {saving ? "Loading..." : "Generate Invoice"}
+              </button>
+
+              <button onClick={onDownloadPdf} disabled={saving || !invoice} style={secondaryBtn}>
+                Download PDF
+              </button>
+            </div>
 
             {invoice ? (
-              <div style={{ marginTop: 12, fontSize: 13 }}>
+              <div style={{ marginTop: 12, fontSize: 13, display: "grid", gap: 6 }}>
                 <div>
-                  <b>Total jobs:</b> {invoice.totalJobs}
+                  <b>Total jobs:</b> {invoice.totals.totalJobs}
                 </div>
                 <div>
-                  <b>Total amount:</b> {invoice.totalAmount} {invoice.currency}
+                  <b>Total job amount:</b> {invoice.totals.totalEstimatedTotal} {currency}
+                </div>
+                <div>
+                  <b>Total booking fee waived:</b> {invoice.totals.totalBookingFeeWaived} {currency}
+                </div>
+                <div>
+                  <b>Total provider amount due:</b> {invoice.totals.totalProviderAmountDue} {currency}
                 </div>
               </div>
             ) : null}
-          </div>
+          </Card>
         </div>
 
+        {/* Right column */}
         <div style={{ display: "grid", gap: 16 }}>
+          {/* Codes */}
           <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, background: "white", overflow: "hidden" }}>
             <div
               style={{
@@ -693,12 +596,12 @@ export default function InsurancePage() {
             {loading ? (
               <div style={{ padding: 14, opacity: 0.7 }}>Loading...</div>
             ) : filteredCodes.length === 0 ? (
-              <div style={{ padding: 14, opacity: 0.7 }}>No codes found for this selection.</div>
+              <div style={{ padding: 14, opacity: 0.7 }}>No codes found.</div>
             ) : (
-              <div style={{ maxHeight: 560, overflow: "auto" }}>
+              <div style={{ maxHeight: 460, overflow: "auto" }}>
                 {filteredCodes.map((c) => {
                   const st = normalizeCodeStatus(c);
-                  const usedAt = c.usedAt || c.usage?.lastUsedAt || null;
+                  const usedAt = c.usage?.lastUsedAt || null;
 
                   return (
                     <div
@@ -716,7 +619,6 @@ export default function InsurancePage() {
                         <div style={{ fontSize: 12, opacity: 0.75 }}>
                           Status: <b>{st}</b> {usedAt ? `• Used: ${new Date(usedAt).toLocaleString()}` : ""}
                         </div>
-
                         {c.usage?.maxUses ? (
                           <div style={{ fontSize: 12, opacity: 0.75 }}>
                             Uses: {c.usage?.usedCount || 0}/{c.usage.maxUses}
@@ -725,7 +627,7 @@ export default function InsurancePage() {
                       </div>
 
                       <button
-                        onClick={() => revokeCode(c._id)}
+                        onClick={() => onDisableCode(c._id)}
                         disabled={saving || st !== "ACTIVE"}
                         style={{
                           padding: "8px 10px",
@@ -746,29 +648,79 @@ export default function InsurancePage() {
             )}
           </div>
 
+          {/* Invoice Items */}
           <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, background: "white", overflow: "hidden" }}>
             <div style={{ padding: 14, borderBottom: "1px solid #e5e7eb", fontWeight: 900 }}>
               Invoice Items {invoice ? `(${invoice.items.length})` : ""}
             </div>
 
             {!invoice ? (
-              <div style={{ padding: 14, opacity: 0.7 }}>Generate invoice to see job usage.</div>
+              <div style={{ padding: 14, opacity: 0.7 }}>Generate an invoice to see items.</div>
             ) : invoice.items.length === 0 ? (
-              <div style={{ padding: 14, opacity: 0.7 }}>No insurance jobs for {invoice.month}.</div>
+              <div style={{ padding: 14, opacity: 0.7 }}>No insurance jobs in this period.</div>
             ) : (
-              <div style={{ maxHeight: 380, overflow: "auto" }}>
+              <div style={{ maxHeight: 520, overflow: "auto" }}>
                 {invoice.items.map((it) => (
                   <div key={it.jobId} style={{ padding: 12, borderBottom: "1px solid #f3f4f6" }}>
-                    <div style={{ fontWeight: 900, fontSize: 14 }}>Job {it.jobId}</div>
-                    <div style={{ fontSize: 12, opacity: 0.75 }}>{new Date(it.createdAt).toLocaleString()}</div>
-                    <div style={{ fontSize: 12, marginTop: 4 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                      <div style={{ fontWeight: 900, fontSize: 14 }}>
+                        Job {it.shortId} <span style={{ opacity: 0.6, fontWeight: 700 }}>({it.status})</span>
+                      </div>
+                      <div style={{ fontSize: 12, opacity: 0.75 }}>{new Date(it.createdAt).toLocaleString()}</div>
+                    </div>
+
+                    <div style={{ fontSize: 12, marginTop: 6 }}>
+                      <b>Provider:</b> {it.provider?.name || "-"}{" "}
+                      {it.provider?.providerId ? (
+                        <span style={{ opacity: 0.7 }}>• {it.provider.providerId}</span>
+                      ) : null}
+                    </div>
+
+                    <div style={{ fontSize: 12, marginTop: 6 }}>
                       <b>Pickup:</b> {it.pickupAddressText || "-"}
                     </div>
                     <div style={{ fontSize: 12 }}>
                       <b>Dropoff:</b> {it.dropoffAddressText || "-"}
                     </div>
-                    <div style={{ fontSize: 12, marginTop: 6 }}>
-                      <b>Amount:</b> {it.amount} {it.currency}
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 8 }}>
+                      <div style={{ fontSize: 12 }}>
+                        <b>Job amount:</b> {it.pricing.estimatedTotal} {currency}
+                      </div>
+                      <div style={{ fontSize: 12 }}>
+                        <b>Provider due:</b> {it.pricing.providerAmountDue} {currency}
+                      </div>
+                    </div>
+
+                    <div style={{ fontSize: 12, marginTop: 6, opacity: 0.85 }}>
+                      <b>Insurance code:</b> {it.insurance.code || "-"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Grouped by provider */}
+          <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, background: "white", overflow: "hidden" }}>
+            <div style={{ padding: 14, borderBottom: "1px solid #e5e7eb", fontWeight: 900 }}>
+              Providers Owed (from invoice)
+            </div>
+
+            {!invoice ? (
+              <div style={{ padding: 14, opacity: 0.7 }}>Generate invoice to see provider totals.</div>
+            ) : invoice.groupedByProvider.length === 0 ? (
+              <div style={{ padding: 14, opacity: 0.7 }}>No assigned providers in this period.</div>
+            ) : (
+              <div style={{ maxHeight: 320, overflow: "auto" }}>
+                {invoice.groupedByProvider.map((p) => (
+                  <div key={p.providerId} style={{ padding: 12, borderBottom: "1px solid #f3f4f6" }}>
+                    <div style={{ fontWeight: 900, fontSize: 13 }}>
+                      {p.name || "Unknown Provider"}{" "}
+                      <span style={{ opacity: 0.6, fontWeight: 700 }}>• {p.providerId}</span>
+                    </div>
+                    <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>
+                      Jobs: <b>{p.jobCount}</b> • Total due: <b>{p.totalProviderAmountDue}</b> {currency}
                     </div>
                   </div>
                 ))}
@@ -781,12 +733,14 @@ export default function InsurancePage() {
   );
 }
 
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: 10,
-  borderRadius: 10,
-  border: "1px solid #d1d5db",
-};
+function Card({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, background: "white" }}>
+      <h2 style={{ fontSize: 16, fontWeight: 900, marginBottom: 10 }}>{title}</h2>
+      {children}
+    </div>
+  );
+}
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -796,3 +750,54 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     </div>
   );
 }
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  padding: 10,
+  borderRadius: 10,
+  border: "1px solid #d1d5db",
+};
+
+const primaryBtn: React.CSSProperties = {
+  marginTop: 10,
+  width: "100%",
+  padding: "12px 14px",
+  borderRadius: 10,
+  border: "1px solid #111827",
+  background: "#111827",
+  color: "white",
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const blueBtn: React.CSSProperties = {
+  marginTop: 10,
+  width: "100%",
+  padding: "12px 14px",
+  borderRadius: 10,
+  border: "1px solid #2563eb",
+  background: "#2563eb",
+  color: "white",
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const greenBtn: React.CSSProperties = {
+  padding: "12px 14px",
+  borderRadius: 10,
+  border: "1px solid #10b981",
+  background: "#10b981",
+  color: "white",
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const secondaryBtn: React.CSSProperties = {
+  padding: "12px 14px",
+  borderRadius: 10,
+  border: "1px solid #d1d5db",
+  background: "white",
+  color: "#111827",
+  fontWeight: 900,
+  cursor: "pointer",
+};

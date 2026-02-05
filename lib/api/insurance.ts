@@ -1,5 +1,6 @@
 // dashboard/lib/api/insurance.ts
-import api from "./axios";
+
+export type CountryCode = string;
 
 export type InsurancePartner = {
   _id: string;
@@ -17,7 +18,6 @@ export type InsurancePartner = {
 
 export type InsuranceCode = {
   _id: string;
-  partner?: { _id?: string; name?: string; partnerCode?: string };
   countryCode: string;
   code: string;
   isActive?: boolean;
@@ -27,107 +27,232 @@ export type InsuranceCode = {
     maxUses?: number;
     lastUsedAt?: string | null;
   };
+  partner?: { _id?: string; name?: string; partnerCode?: string };
   createdAt?: string;
 };
 
-export type InvoiceSummary = {
-  partnerId: string;
-  countryCode: string;
-  month: string;
-  currency: string;
-  totalJobs: number;
-  totalAmount: number;
-  items: Array<{
-    jobId: string;
-    createdAt: string;
-    pickupAddressText?: string | null;
-    dropoffAddressText?: string | null;
-    amount: number;
+export type InvoiceItem = {
+  jobId: string;
+  shortId: string;
+  createdAt: string;
+  status: string;
+  roleNeeded: string;
+  pickupAddressText: string | null;
+  dropoffAddressText: string | null;
+
+  provider: null | {
+    providerId: string;
+    name: string | null;
+    email: string | null;
+    phone: string | null;
+  };
+
+  customer: null | {
+    customerId: string;
+    name: string | null;
+    email: string | null;
+    phone: string | null;
+  };
+
+  pricing: {
     currency: string;
-    paidAmount?: number;
+    estimatedTotal: number;
+    bookingFee: number;
+    commissionAmount: number;
+    providerAmountDue: number;
+    estimatedDistanceKm: number;
+  };
+
+  insurance: {
+    enabled: boolean;
+    code: string | null;
+    partnerId: string;
+    validatedAt: string | null;
+  };
+};
+
+export type InvoiceResponse = {
+  partner: {
+    partnerId: string;
+    name: string;
+    partnerCode: string;
+    email: string | null;
+    phone: string | null;
+  };
+  countryCode: string;
+  currency: string;
+  period: { month: string | null; from: string; to: string };
+  filters: { providerId: string | null };
+  totals: {
+    totalJobs: number;
+    totalEstimatedTotal: number;
+    totalBookingFeeWaived: number;
+    totalCommission: number;
+    totalProviderAmountDue: number;
+  };
+  items: InvoiceItem[];
+  groupedByProvider: Array<{
+    providerId: string;
+    name: string | null;
+    jobCount: number;
+    totalProviderAmountDue: number;
+    currency: string;
   }>;
 };
 
-/**
- * ============================
- * PARTNERS (ADMIN)
- * ============================
- */
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  "http://localhost:5000";
 
-export async function getInsurancePartners(params?: { countryCode?: string }) {
-  const res = await api.get("/admin/insurance/partners", { params });
-  return (res.data?.partners || []) as InsurancePartner[];
+function getToken() {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("adminToken") || localStorage.getItem("token");
 }
 
-export async function createInsurancePartner(payload: {
-  name: string;
-  partnerCode: string;
-  countryCodes: string[];
-  email?: string | null;
-  phone?: string | null;
-  logoUrl?: string | null;
-  description?: string | null;
-  isActive?: boolean;
-}) {
-  const res = await api.post("/admin/insurance/partners", payload);
-  return res.data?.partner as InsurancePartner;
+function authHeaders(extra: Record<string, string> = {}) {
+  const token = getToken();
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...extra,
+  };
 }
 
-export async function updateInsurancePartner(
-  partnerId: string,
-  payload: Partial<{
-    name: string;
-    email: string | null;
-    phone: string | null;
-    logoUrl: string | null;
-    description: string | null;
-    countryCodes: string[];
-    isActive: boolean;
-  }>
-) {
-  const res = await api.patch(`/admin/insurance/partners/${partnerId}`, payload);
-  return res.data?.partner as InsurancePartner;
+async function readJson(res: Response) {
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as any)?.message || "Request failed");
+  return data;
 }
 
-/**
- * ============================
- * CODES (ADMIN)
- * ============================
- */
-
-export async function getInsuranceCodes(params: { partnerId: string; countryCode: string }) {
-  const res = await api.get("/admin/insurance/codes", { params });
-  return (res.data?.codes || []) as InsuranceCode[];
+export async function getPartners(countryCode: CountryCode) {
+  const res = await fetch(
+    `${API_BASE}/api/admin/insurance/partners?countryCode=${encodeURIComponent(countryCode)}`,
+    {
+      method: "GET",
+      headers: authHeaders({ "X-COUNTRY-CODE": countryCode }),
+    }
+  );
+  const data = (await readJson(res)) as any;
+  return (Array.isArray(data?.partners) ? data.partners : []) as InsurancePartner[];
 }
 
-export async function generateInsuranceCodes(payload: {
+export async function createPartner(countryCode: CountryCode, payload: any) {
+  const res = await fetch(`${API_BASE}/api/admin/insurance/partners`, {
+    method: "POST",
+    headers: authHeaders({ "X-COUNTRY-CODE": countryCode }),
+    body: JSON.stringify(payload),
+  });
+  return readJson(res);
+}
+
+export async function updatePartner(countryCode: CountryCode, partnerId: string, payload: any) {
+  const res = await fetch(`${API_BASE}/api/admin/insurance/partners/${partnerId}`, {
+    method: "PATCH",
+    headers: authHeaders({ "X-COUNTRY-CODE": countryCode }),
+    body: JSON.stringify(payload),
+  });
+  return readJson(res);
+}
+
+export async function getCodes(countryCode: CountryCode, partnerId: string) {
+  const res = await fetch(
+    `${API_BASE}/api/admin/insurance/codes?countryCode=${encodeURIComponent(
+      countryCode
+    )}&partnerId=${encodeURIComponent(partnerId)}`,
+    {
+      method: "GET",
+      headers: authHeaders({ "X-COUNTRY-CODE": countryCode }),
+    }
+  );
+  const data = (await readJson(res)) as any;
+  return (Array.isArray(data?.codes) ? data.codes : []) as InsuranceCode[];
+}
+
+export async function generateCodes(countryCode: CountryCode, payload: any) {
+  const res = await fetch(`${API_BASE}/api/admin/insurance/codes/generate`, {
+    method: "POST",
+    headers: authHeaders({ "X-COUNTRY-CODE": countryCode }),
+    body: JSON.stringify(payload),
+  });
+  return readJson(res);
+}
+
+export async function disableCode(countryCode: CountryCode, codeId: string) {
+  const res = await fetch(`${API_BASE}/api/admin/insurance/codes/${codeId}/disable`, {
+    method: "PATCH",
+    headers: authHeaders({ "X-COUNTRY-CODE": countryCode }),
+  });
+  return readJson(res);
+}
+
+export async function getInvoice(args: {
+  countryCode: CountryCode;
   partnerId: string;
-  countryCode: string;
-  count: number;
-  length?: number;
-  expiresInDays?: number;
-  maxUses?: number;
+  month?: string; // YYYY-MM
+  from?: string; // YYYY-MM-DD
+  to?: string; // YYYY-MM-DD
+  providerId?: string;
 }) {
-  const res = await api.post("/admin/insurance/codes/generate", payload);
-  return res.data;
-}
+  const qs = new URLSearchParams();
+  qs.set("countryCode", args.countryCode);
+  qs.set("partnerId", args.partnerId);
 
-export async function disableInsuranceCode(codeId: string) {
-  const res = await api.patch(`/admin/insurance/codes/${codeId}/disable`);
-  return res.data;
+  if (args.month) qs.set("month", args.month);
+  if (args.from) qs.set("from", args.from);
+  if (args.to) qs.set("to", args.to);
+  if (args.providerId) qs.set("providerId", args.providerId);
+
+  const res = await fetch(`${API_BASE}/api/admin/insurance/invoice?${qs.toString()}`, {
+    method: "GET",
+    headers: authHeaders({ "X-COUNTRY-CODE": args.countryCode }),
+  });
+
+  const data = (await readJson(res)) as any;
+  return (data?.invoice || null) as InvoiceResponse | null;
 }
 
 /**
- * ============================
- * INVOICE (ADMIN)
- * ============================
+ * Download PDF (backend currently returns 501 until you enable PDF generation)
  */
-
-export async function getInsuranceInvoice(params: {
+export async function downloadInvoicePdf(args: {
+  countryCode: CountryCode;
   partnerId: string;
-  countryCode: string;
-  month: string; // YYYY-MM
+  month?: string;
+  from?: string;
+  to?: string;
+  providerId?: string;
 }) {
-  const res = await api.get("/admin/insurance/invoice", { params });
-  return res.data?.invoice as InvoiceSummary;
+  const qs = new URLSearchParams();
+  qs.set("countryCode", args.countryCode);
+  qs.set("partnerId", args.partnerId);
+
+  if (args.month) qs.set("month", args.month);
+  if (args.from) qs.set("from", args.from);
+  if (args.to) qs.set("to", args.to);
+  if (args.providerId) qs.set("providerId", args.providerId);
+
+  const res = await fetch(`${API_BASE}/api/admin/insurance/invoice/pdf?${qs.toString()}`, {
+    method: "GET",
+    headers: (() => {
+      const token = getToken();
+      return {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        "X-COUNTRY-CODE": args.countryCode,
+      };
+    })(),
+  });
+
+  // If server returns JSON error, surface it
+  const contentType = res.headers.get("content-type") || "";
+  if (!res.ok) {
+    if (contentType.includes("application/json")) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error((data as any)?.message || "PDF download failed");
+    }
+    throw new Error("PDF download failed");
+  }
+
+  const blob = await res.blob();
+  return blob;
 }
