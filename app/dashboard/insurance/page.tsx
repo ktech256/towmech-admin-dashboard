@@ -1,3 +1,4 @@
+// dashboard/app/dashboard/insurance/page.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -362,9 +363,7 @@ export default function InsurancePage() {
     if (!selectedCountryCode || !selectedPartnerId || !invoice) return;
 
     const providerId = providerIdFilter.trim();
-    if (!providerId) {
-      return setError("Enter Provider/Driver ID to download an individual statement.");
-    }
+    if (!providerId) return setError("Enter Provider/Driver ID to download an individual statement.");
 
     setSaving(true);
     setError(null);
@@ -476,7 +475,6 @@ export default function InsurancePage() {
       <div style={{ display: "grid", gridTemplateColumns: "440px 1fr", gap: 16 }}>
         {/* Left column */}
         <div style={{ display: "grid", gap: 16 }}>
-          {/* Create partner */}
           <Card title="Create Partner">
             <Field label="Partner name">
               <input
@@ -519,7 +517,6 @@ export default function InsurancePage() {
             </button>
           </Card>
 
-          {/* Generate codes */}
           <Card title="Generate Codes">
             <Field label="Number of codes">
               <input
@@ -536,12 +533,9 @@ export default function InsurancePage() {
               {saving ? "Working..." : "Generate Codes"}
             </button>
 
-            <div style={{ marginTop: 10, fontSize: 12, opacity: 0.75 }}>
-              Codes are unique per partner + country.
-            </div>
+            <div style={{ marginTop: 10, fontSize: 12, opacity: 0.75 }}>Codes are unique per partner + country.</div>
           </Card>
 
-          {/* Invoice */}
           <Card title="Statements & PDFs">
             <Field label="Mode">
               <select
@@ -627,7 +621,6 @@ export default function InsurancePage() {
 
         {/* Right column */}
         <div style={{ display: "grid", gap: 16 }}>
-          {/* Codes */}
           <div style={{ border: "1px solid #e5e7eb", borderRadius: 14, background: "white", overflow: "hidden" }}>
             <div
               style={{
@@ -710,7 +703,6 @@ export default function InsurancePage() {
             )}
           </div>
 
-          {/* Invoice Items */}
           <div style={{ border: "1px solid #e5e7eb", borderRadius: 14, background: "white", overflow: "hidden" }}>
             <div style={{ padding: 14, borderBottom: "1px solid #e5e7eb", fontWeight: 900 }}>
               Statement Items {invoice ? `(${invoice.items.length})` : ""}
@@ -733,9 +725,7 @@ export default function InsurancePage() {
 
                     <div style={{ fontSize: 12, marginTop: 6 }}>
                       <b>Provider:</b> {it.provider?.name || "-"}{" "}
-                      {it.provider?.providerId ? (
-                        <span style={{ opacity: 0.7 }}>• {it.provider.providerId}</span>
-                      ) : null}
+                      {it.provider?.providerId ? <span style={{ opacity: 0.7 }}>• {it.provider.providerId}</span> : null}
                     </div>
 
                     <div style={{ fontSize: 12, marginTop: 6 }}>
@@ -763,7 +753,6 @@ export default function InsurancePage() {
             )}
           </div>
 
-          {/* Grouped by provider */}
           <div style={{ border: "1px solid #e5e7eb", borderRadius: 14, background: "white", overflow: "hidden" }}>
             <div style={{ padding: 14, borderBottom: "1px solid #e5e7eb", fontWeight: 900 }}>
               Providers Owed (from statement)

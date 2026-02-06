@@ -1,5 +1,4 @@
 // dashboard/lib/api/insurance.ts
-
 export type CountryCode = string;
 
 export type InsurancePartner = {
@@ -117,7 +116,6 @@ export type InvoiceResponse = {
 
     jobCount: number;
 
-    // ✅ backend provides these fields
     grossTotal: number;
     commissionTotal: number;
     netTotalDue: number;
@@ -351,7 +349,7 @@ export async function downloadInvoicePdf(args: {
   month?: string;
   from?: string;
   to?: string;
-  providerId?: string; // ✅ add this for TS + functionality
+  providerId?: string;
 }) {
   const qs = new URLSearchParams();
   qs.set("countryCode", args.countryCode);
@@ -361,7 +359,6 @@ export async function downloadInvoicePdf(args: {
   if (args.from) qs.set("from", args.from);
   if (args.to) qs.set("to", args.to);
 
-  // ✅ If providerId exists, download the individual provider statement
   const providerId = args.providerId?.trim();
   if (providerId) qs.set("providerId", providerId);
 
@@ -369,24 +366,9 @@ export async function downloadInvoicePdf(args: {
     `${API_BASE}/api/admin/insurance/${providerId ? "provider/pdf" : "invoice/pdf"}?${qs.toString()}`,
     {
       method: "GET",
-      headers: (() => {
-        const token = getToken();
-        return {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          "X-COUNTRY-CODE": args.countryCode,
-        };
-      })(),
+      headers: pdfHeaders(args.countryCode),
     }
   );
 
-  const contentType = res.headers.get("content-type") || "";
-  if (!res.ok) {
-    if (contentType.includes("application/json")) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error((data as any)?.message || "PDF download failed");
-    }
-    throw new Error("PDF download failed");
-  }
-
-  return res.blob();
+  return readPdfOrThrow(res, "PDF download failed");
 }
