@@ -351,6 +351,42 @@ export async function downloadInvoicePdf(args: {
   month?: string;
   from?: string;
   to?: string;
+  providerId?: string; // ✅ add this for TS + functionality
 }) {
-  return downloadPartnerInvoicePdf(args);
+  const qs = new URLSearchParams();
+  qs.set("countryCode", args.countryCode);
+  qs.set("partnerId", args.partnerId);
+
+  if (args.month) qs.set("month", args.month);
+  if (args.from) qs.set("from", args.from);
+  if (args.to) qs.set("to", args.to);
+
+  // ✅ If providerId exists, download the individual provider statement
+  const providerId = args.providerId?.trim();
+  if (providerId) qs.set("providerId", providerId);
+
+  const res = await fetch(
+    `${API_BASE}/api/admin/insurance/${providerId ? "provider/pdf" : "invoice/pdf"}?${qs.toString()}`,
+    {
+      method: "GET",
+      headers: (() => {
+        const token = getToken();
+        return {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          "X-COUNTRY-CODE": args.countryCode,
+        };
+      })(),
+    }
+  );
+
+  const contentType = res.headers.get("content-type") || "";
+  if (!res.ok) {
+    if (contentType.includes("application/json")) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error((data as any)?.message || "PDF download failed");
+    }
+    throw new Error("PDF download failed");
+  }
+
+  return res.blob();
 }
