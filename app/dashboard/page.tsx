@@ -6,6 +6,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { fetchOverviewSummary } from "@/lib/api/overview";
 
+function formatMoney(value: number, currency: string) {
+  const n = Number(value || 0);
+  return `${n.toLocaleString()} ${currency}`;
+}
+
 export default function DashboardOverviewPage() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
@@ -42,6 +47,8 @@ export default function DashboardOverviewPage() {
     );
   }
 
+  const currency = data.currency || "—";
+
   return (
     <div className="space-y-6">
       <ModuleHeader
@@ -49,7 +56,6 @@ export default function DashboardOverviewPage() {
         description="High-level platform performance and operational snapshot."
       />
 
-      {/* ✅ Summary cards */}
       <div className="grid gap-4 md:grid-cols-4">
         <StatCard title="Total Users" value={data.users} />
         <StatCard title="Total Providers" value={data.providers} />
@@ -57,17 +63,31 @@ export default function DashboardOverviewPage() {
         <StatCard title="Pending Payments" value={data.pendingPayments} />
         <StatCard title="Open Support Tickets" value={data.openSupportTickets} />
         <StatCard title="Live Providers" value={data.liveProviders} />
-        <StatCard title="Total Revenue" value={`R ${data.revenueTotal}`} />
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-sm text-muted-foreground">
+              Total Revenue
+            </CardTitle>
+            <Badge variant="secondary">{currency}</Badge>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-semibold">
+              {formatMoney(data.revenueTotal, currency)}
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* ✅ Most used services */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Most Used Services</CardTitle>
         </CardHeader>
         <CardContent>
           {data.topServices?.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No service records yet ✅</p>
+            <p className="text-sm text-muted-foreground">
+              No service records yet ✅
+            </p>
           ) : (
             <div className="space-y-2">
               {data.topServices.map((s: any) => (

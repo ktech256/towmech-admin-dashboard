@@ -47,6 +47,11 @@ type Analytics = {
   };
 };
 
+function formatMoney(value: number, currency: string) {
+  const n = Number(value || 0);
+  return `${n.toLocaleString()} ${currency}`;
+}
+
 export default function AnalyticsPage() {
   const { countryCode } = useCountryStore();
 
@@ -78,8 +83,6 @@ export default function AnalyticsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [countryCode]);
 
-  const currency = data?.currency || "ZAR";
-
   if (!countryCode) {
     return (
       <div className="flex h-[60vh] items-center justify-center text-sm text-muted-foreground">
@@ -87,6 +90,24 @@ export default function AnalyticsPage() {
       </div>
     );
   }
+
+  if (loading) {
+    return (
+      <div className="py-10 text-center text-sm text-muted-foreground">
+        Loading analytics dashboard...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="py-10 text-center text-sm text-red-600">{error}</div>
+    );
+  }
+
+  if (!data) return null;
+
+  const currency = data.currency || "—";
 
   return (
     <div className="space-y-6">
@@ -97,121 +118,79 @@ export default function AnalyticsPage() {
 
       <div className="flex justify-end">
         <Button size="sm" onClick={load} disabled={loading}>
-          {loading ? "Refreshing..." : "Refresh Analytics"}
+          Refresh Analytics
         </Button>
       </div>
 
-      {loading && (
-        <div className="py-10 text-center text-sm text-muted-foreground">
-          Loading analytics dashboard...
-        </div>
-      )}
+      {/* BUSINESS METRICS */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Business Metrics</CardTitle>
+          <Badge variant="secondary">{currency}</Badge>
+        </CardHeader>
 
-      {error && (
-        <div className="py-10 text-center text-sm text-red-600">{error}</div>
-      )}
+        <CardContent className="grid gap-4 md:grid-cols-4">
+          <Stat label="Total Revenue" value={formatMoney(data.business.revenue.totalRevenue, currency)} />
+          <Stat label="Today Revenue" value={formatMoney(data.business.revenue.revenueToday, currency)} />
+          <Stat label="Week Revenue" value={formatMoney(data.business.revenue.revenueWeek, currency)} />
+          <Stat label="Month Revenue" value={formatMoney(data.business.revenue.revenueMonth, currency)} />
+        </CardContent>
+      </Card>
 
-      {!loading && data && (
-        <>
-          {/* ✅ BUSINESS METRICS */}
-          <Card>
-            <CardHeader className="flex flex-row justify-between items-center">
-              <CardTitle>Business Metrics</CardTitle>
-              <Badge variant="secondary">{currency}</Badge>
-            </CardHeader>
+      {/* PAYMENTS */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Payments Overview</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-3">
+          <Stat label="Paid Payments" value={data.business.payments.paymentsPaid} />
+          <Stat label="Pending Payments" value={data.business.payments.paymentsPending} />
+          <Stat label="Refunded Payments" value={data.business.payments.paymentsRefunded} />
+        </CardContent>
+      </Card>
 
-            <CardContent className="grid gap-4 md:grid-cols-4">
-              <Stat
-                label="Total Revenue"
-                value={`${data.business.revenue.totalRevenue} ${currency}`}
-              />
-              <Stat
-                label="Today Revenue"
-                value={`${data.business.revenue.revenueToday} ${currency}`}
-              />
-              <Stat
-                label="Week Revenue"
-                value={`${data.business.revenue.revenueWeek} ${currency}`}
-              />
-              <Stat
-                label="Month Revenue"
-                value={`${data.business.revenue.revenueMonth} ${currency}`}
-              />
-            </CardContent>
-          </Card>
+      {/* OPERATIONS */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Operational Overview</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-4">
+          <Stat label="Total Jobs" value={data.business.jobs.totalJobs} />
+          <Stat label="Completed Jobs" value={data.business.jobs.jobsCompleted} />
+          <Stat label="Cancelled Jobs" value={data.business.jobs.jobsCancelled} />
+          <Stat label="Avg Completion" value={`${data.operations.avgCompletionMinutes} mins`} />
+        </CardContent>
+      </Card>
 
-          {/* ✅ PAYMENTS */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Payments Overview</CardTitle>
-            </CardHeader>
+      {/* PROVIDERS */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Providers & Customers</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-4">
+          <Stat label="Total Customers" value={data.operations.users.totalCustomers} />
+          <Stat label="Total Providers" value={data.operations.users.totalProviders} />
+          <Stat label="Online Providers" value={data.operations.providers.onlineProviders} />
+          <Stat
+            label="Pending Provider Verification"
+            value={data.operations.providers.pendingVerificationProviders}
+          />
+        </CardContent>
+      </Card>
 
-            <CardContent className="grid gap-4 md:grid-cols-3">
-              <Stat label="Paid Payments" value={data.business.payments.paymentsPaid} />
-              <Stat
-                label="Pending Payments"
-                value={data.business.payments.paymentsPending}
-              />
-              <Stat
-                label="Refunded Payments"
-                value={data.business.payments.paymentsRefunded}
-              />
-            </CardContent>
-          </Card>
-
-          {/* ✅ OPERATIONS */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Operational Overview</CardTitle>
-            </CardHeader>
-
-            <CardContent className="grid gap-4 md:grid-cols-4">
-              <Stat label="Total Jobs" value={data.business.jobs.totalJobs} />
-              <Stat label="Completed Jobs" value={data.business.jobs.jobsCompleted} />
-              <Stat label="Cancelled Jobs" value={data.business.jobs.jobsCancelled} />
-              <Stat
-                label="Avg Completion"
-                value={`${data.operations.avgCompletionMinutes} mins`}
-              />
-            </CardContent>
-          </Card>
-
-          {/* ✅ PROVIDER STATS */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Providers & Customers</CardTitle>
-            </CardHeader>
-
-            <CardContent className="grid gap-4 md:grid-cols-4">
-              <Stat label="Total Customers" value={data.operations.users.totalCustomers} />
-              <Stat label="Total Providers" value={data.operations.users.totalProviders} />
-              <Stat label="Online Providers" value={data.operations.providers.onlineProviders} />
-              <Stat
-                label="Pending Provider Verification"
-                value={data.operations.providers.pendingVerificationProviders}
-              />
-            </CardContent>
-          </Card>
-
-          {/* ✅ JOB STATUS CHART */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Jobs by Status</CardTitle>
-            </CardHeader>
-
-            <CardContent>
-              <JobStatusChart jobsByStatus={data.operations.jobsByStatus} />
-            </CardContent>
-          </Card>
-        </>
-      )}
+      {/* JOB STATUS */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Jobs by Status</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <JobStatusChart jobsByStatus={data.operations.jobsByStatus} />
+        </CardContent>
+      </Card>
     </div>
   );
 }
 
-/**
- * ✅ Stat Component
- */
 function Stat({ label, value }: { label: string; value: any }) {
   return (
     <div className="rounded-lg border bg-white p-4 shadow-sm">
