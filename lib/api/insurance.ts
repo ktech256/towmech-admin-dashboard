@@ -35,6 +35,7 @@ export type InvoiceItem = {
   jobId: string;
   shortId: string;
   createdAt: string;
+  updatedAt?: string | null;
   status: string;
   roleNeeded: string;
   pickupAddressText: string | null;
@@ -56,10 +57,10 @@ export type InvoiceItem = {
 
   pricing: {
     currency: string;
-    estimatedTotal: number;
-    bookingFee: number;
-    commissionAmount: number;
-    providerAmountDue: number;
+    estimatedTotal: number; // gross
+    bookingFee: number; // booking fee waived
+    commissionAmount: number; // commission/booking fee (your cut)
+    providerAmountDue: number; // net due to provider
     estimatedDistanceKm: number;
   };
 
@@ -67,6 +68,8 @@ export type InvoiceItem = {
     enabled: boolean;
     code: string | null;
     partnerId: string;
+    partnerName?: string | null;
+    partnerCode?: string | null;
     validatedAt: string | null;
   };
 };
@@ -85,18 +88,46 @@ export type InvoiceResponse = {
   filters: { providerId: string | null };
   totals: {
     totalJobs: number;
-    totalEstimatedTotal: number;
+
+    // ✅ what insurer owes you (gross, no deductions)
+    totalPartnerAmountDue?: number;
+
+    // informational
+    totalEstimatedTotal?: number; // legacy (older backend)
     totalBookingFeeWaived: number;
     totalCommission: number;
+
+    // ✅ what you owe providers (net)
     totalProviderAmountDue: number;
   };
   items: InvoiceItem[];
   groupedByProvider: Array<{
     providerId: string;
     name: string | null;
+    email?: string | null;
+    phone?: string | null;
     jobCount: number;
-    totalProviderAmountDue: number;
+
+    // ✅ new (for tabulated provider payments)
+    grossTotal?: number;
+    commissionTotal?: number;
+    netTotalDue?: number;
+
     currency: string;
+
+    // optional: backend may include job list per provider
+    jobs?: Array<{
+      jobId: string;
+      shortId: string;
+      createdAt: string;
+      status: string;
+      pickupAddressText: string | null;
+      dropoffAddressText: string | null;
+      estimatedTotal: number;
+      commissionAmount: number;
+      providerAmountDue: number;
+      insuranceCode: string | null;
+    }>;
   }>;
 };
 
@@ -209,19 +240,23 @@ export async function getInvoice(args: {
   });
 
   const data = (await readJson(res)) as any;
-  return (data?.invoice || null) as InvoiceResponse | null;
+
+  // backend returns { ok: true, invoice: {...} } in many versions
+  const invoice = (data?.invoice || null) as InvoiceResponse | null;
+  return invoice;
 }
 
 /**
- * Download PDF (backend currently returns 501 until you enable PDF generation)
+ * ✅ 1) Download Partner Invoice PDF (what insurer owes you; gross total)
+ * Backend: GET /api/admin/insurance/invoice/pdf
  */
-export async function downloadInvoicePdf(args: {
+export async function downloadPartnerInvoicePdf(args: {
   countryCode: CountryCode;
   partnerId: string;
   month?: string;
   from?: string;
   to?: string;
-  providerId?: string;
+  providerId?: string; // optional: rare for partner invoice; keep for parity
 }) {
   const qs = new URLSearchParams();
   qs.set("countryCode", args.countryCode);
@@ -243,7 +278,6 @@ export async function downloadInvoicePdf(args: {
     })(),
   });
 
-  // If server returns JSON error, surface it
   const contentType = res.headers.get("content-type") || "";
   if (!res.ok) {
     if (contentType.includes("application/json")) {
@@ -253,6 +287,106 @@ export async function downloadInvoicePdf(args: {
     throw new Error("PDF download failed");
   }
 
-  const blob = await res.blob();
-  return blob;
+  return res.blob();
+}
+
+/**
+ * ✅ 2) Download Providers Owed Summary PDF (tabulated per driver)
+ * Backend: GET /api/admin/insurance/providers/pdf
+ */
+export async function downloadProvidersOwedPdf(args: {
+  countryCode: CountryCode;
+  partnerId: string;
+  month?: string;
+  from?: string;
+  to?: string;
+}) {
+  const qs = new URLSearchParams();
+  qs.set("countryCode", args.countryCode);
+  qs.set("partnerId", args.partnerId);
+
+  if (args.month) qs.set("month", args.month);
+  if (args.from) qs.set("from", args.from);
+  if (args.to) qs.set("to", args.to);
+
+  const res = await fetch(`${API_BASE}/api/admin/insurance/providers/pdf?${qs.toString()}`, {
+    method: "GET",
+    headers: (() => {
+      const token = getToken();
+      return {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        "X-COUNTRY-CODE": args.countryCode,
+      };
+    })(),
+  });
+
+  const contentType = res.headers.get("content-type") || "";
+  if (!res.ok) {
+    if (contentType.includes("application/json")) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error((data as any)?.message || "Providers PDF download failed");
+    }
+    throw new Error("Providers PDF download failed");
+  }
+
+  return res.blob();
+}
+
+/**
+ * ✅ 3) Download Provider Detailed Statement PDF (single driver)
+ * Backend: GET /api/admin/insurance/provider/pdf
+ */
+export async function downloadProviderStatementPdf(args: {
+  countryCode: CountryCode;
+  partnerId: string;
+  providerId: string;
+  month?: string;
+  from?: string;
+  to?: string;
+}) {
+  const qs = new URLSearchParams();
+  qs.set("countryCode", args.countryCode);
+  qs.set("partnerId", args.partnerId);
+  qs.set("providerId", args.providerId);
+
+  if (args.month) qs.set("month", args.month);
+  if (args.from) qs.set("from", args.from);
+  if (args.to) qs.set("to", args.to);
+
+  const res = await fetch(`${API_BASE}/api/admin/insurance/provider/pdf?${qs.toString()}`, {
+    method: "GET",
+    headers: (() => {
+      const token = getToken();
+      return {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        "X-COUNTRY-CODE": args.countryCode,
+      };
+    })(),
+  });
+
+  const contentType = res.headers.get("content-type") || "";
+  if (!res.ok) {
+    if (contentType.includes("application/json")) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error((data as any)?.message || "Provider statement PDF download failed");
+    }
+    throw new Error("Provider statement PDF download failed");
+  }
+
+  return res.blob();
+}
+
+/**
+ * Backward compatible alias (your page.tsx currently calls downloadInvoicePdf)
+ * Keeps existing UI working while you add new buttons.
+ */
+export async function downloadInvoicePdf(args: {
+  countryCode: CountryCode;
+  partnerId: string;
+  month?: string;
+  from?: string;
+  to?: string;
+  providerId?: string;
+}) {
+  return downloadPartnerInvoicePdf(args);
 }
