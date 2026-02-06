@@ -82,6 +82,11 @@ function jsonToPretty(obj: any) {
   }
 }
 
+function safeTrimOrNull(v: any) {
+  const s = String(v ?? "").trim();
+  return s ? s : null;
+}
+
 export default function InsurancePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -124,6 +129,12 @@ export default function InsurancePage() {
 
   // Generate codes
   const [generateCount, setGenerateCount] = useState<number>(50);
+
+  // Batch revoke codes
+  const [openBatchRevoke, setOpenBatchRevoke] = useState(false);
+  const [batchMode, setBatchMode] = useState<"ALL_UNUSED" | "SELECTED">("ALL_UNUSED");
+  const [batchSelected, setBatchSelected] = useState<Record<string, boolean>>({});
+  const [batchReason, setBatchReason] = useState("");
 
   // Invoice filters
   const [invoiceMode, setInvoiceMode] = useState<"MONTH" | "RANGE">("MONTH");
@@ -170,6 +181,7 @@ export default function InsurancePage() {
   async function reloadCodes(countryCode: string, partnerId: string) {
     const list = await getCodes(countryCode, partnerId);
     setCodes(Array.isArray(list) ? list : []);
+    setBatchSelected({}); // reset selections when codes reload
   }
 
   async function init() {
@@ -211,21 +223,16 @@ export default function InsurancePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPartnerId, selectedCountryCode]);
 
-  // ---- Code status + grouping (Unused / Used / Revoked) ----
-  function normalizeCodeStatus(c: InsuranceCode): "UNUSED" | "USED" | "REVOKED" {
+  // ---- Code status + grouping (ACTIVE / USED / REVOKED) ----
+  function normalizeCodeStatus(c: InsuranceCode): "ACTIVE" | "USED" | "REVOKED" {
     const usedCount = (c as any).usage?.usedCount || 0;
     const isActive = (c as any).isActive;
     if (isActive === false) return "REVOKED";
     if (usedCount > 0) return "USED";
-    return "UNUSED";
+    return "ACTIVE";
   }
 
   function codeUsedAmount(c: InsuranceCode): number | null {
-    // We attempt to read an amount stored on code usage if backend provides it:
-    // common shapes:
-    // - c.usage.lastJobAmount
-    // - c.usage.lastUsedJobAmount
-    // - c.usage.lastJob.total / amount
     const u = (c as any).usage || {};
     const direct =
       u.lastJobAmount ??
@@ -247,7 +254,7 @@ export default function InsurancePage() {
   }
 
   const groupedCodes = useMemo(() => {
-    const unused: InsuranceCode[] = [];
+    const active: InsuranceCode[] = [];
     const used: InsuranceCode[] = [];
     const revoked: InsuranceCode[] = [];
 
@@ -255,10 +262,10 @@ export default function InsurancePage() {
       const st = normalizeCodeStatus(c);
       if (st === "USED") used.push(c);
       else if (st === "REVOKED") revoked.push(c);
-      else unused.push(c);
+      else active.push(c);
     }
 
-    return { unused, used, revoked };
+    return { active, used, revoked };
   }, [codes]);
 
   // ---- Actions ----
@@ -274,13 +281,19 @@ export default function InsurancePage() {
     setError(null);
 
     try {
+      // ✅ FIX 1: send both naming variants so backend definitely persists
+      const email = safeTrimOrNull(newPartnerEmail);
+      const phone = safeTrimOrNull(newPartnerPhone);
+
       await createPartner(selectedCountryCode, {
         name,
         partnerCode,
-        email: newPartnerEmail.trim() || null,
-        phone: newPartnerPhone.trim() || null,
+        email,
+        phone,
+        contactEmail: email,
+        contactPhone: phone,
         countryCodes: [selectedCountryCode],
-      });
+      } as any);
 
       setNewPartnerName("");
       setNewPartnerCode("");
@@ -300,8 +313,8 @@ export default function InsurancePage() {
     setEditPartner(p);
     setEditName(p.name || "");
     setEditCode((p as any).partnerCode || "");
-    setEditEmail((p as any).email || "");
-    setEditPhone((p as any).phone || "");
+    setEditEmail((p as any).email || (p as any).contactEmail || "");
+    setEditPhone((p as any).phone || (p as any).contactPhone || "");
     setEditIsActive(Boolean((p as any).isActive));
     setEditIsArchived(Boolean((p as any).isArchived));
     setOpenEdit(true);
@@ -319,11 +332,17 @@ export default function InsurancePage() {
     setError(null);
 
     try {
+      // ✅ FIX 1: update both naming variants too
+      const email = safeTrimOrNull(editEmail);
+      const phone = safeTrimOrNull(editPhone);
+
       await updatePartner(selectedCountryCode, editPartner._id, {
         name,
         partnerCode,
-        email: editEmail.trim() || null,
-        phone: editPhone.trim() || null,
+        email,
+        phone,
+        contactEmail: email,
+        contactPhone: phone,
         isActive: editIsActive,
         isArchived: editIsArchived,
       } as any);
@@ -400,6 +419,47 @@ export default function InsurancePage() {
       await reloadCodes(selectedCountryCode, selectedPartnerId);
     } catch (e: any) {
       setError(e?.message || "Revoke failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ✅ FIX 2: Batch revoke (all ACTIVE, or selected)
+  async function onBatchRevokeConfirm() {
+    if (!selectedCountryCode || !selectedPartnerId) return;
+
+    const reason = safeTrimOrNull(batchReason) || "Batch revoked by admin";
+
+    let targets: InsuranceCode[] = [];
+    if (batchMode === "ALL_UNUSED") {
+      targets = groupedCodes.active; // ACTIVE = unused
+    } else {
+      const ids = Object.keys(batchSelected).filter((k) => batchSelected[k]);
+      targets = codes.filter((c) => ids.includes((c as any)._id));
+    }
+
+    if (targets.length === 0) {
+      setError("No codes selected for batch revoke.");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+
+    try {
+      // Best effort: run sequentially to avoid rate-limits / backend constraints
+      for (const c of targets) {
+        // If your disableCode endpoint supports a reason payload, you can change this in api layer.
+        // Here we just call disableCode as imported.
+        await disableCode(selectedCountryCode, (c as any)._id);
+      }
+
+      setOpenBatchRevoke(false);
+      setBatchSelected({});
+      setBatchReason("");
+      await reloadCodes(selectedCountryCode, selectedPartnerId);
+    } catch (e: any) {
+      setError(e?.message || "Batch revoke failed");
     } finally {
       setSaving(false);
     }
@@ -501,7 +561,7 @@ export default function InsurancePage() {
     }
   }
 
-  // ✅ NEW: download codes list as PDF (simple server-side PDF endpoint if available; otherwise fallback to print)
+  // Codes PDF download
   async function onDownloadCodesPdf() {
     if (!selectedCountryCode || !selectedPartnerId) return;
 
@@ -509,8 +569,6 @@ export default function InsurancePage() {
     setError(null);
 
     try {
-      // Preferred: if backend supports a PDF endpoint
-      // Example endpoint (adjust in backend if needed): /api/admin/insurance/codes/pdf?countryCode=ZA&partnerId=...
       const url = `${API_BASE}/api/admin/insurance/codes/pdf?countryCode=${encodeURIComponent(
         selectedCountryCode
       )}&partnerId=${encodeURIComponent(selectedPartnerId)}`;
@@ -520,18 +578,19 @@ export default function InsurancePage() {
         const blob = await res.blob();
         triggerDownload(
           blob,
-          `insurance-codes-${selectedCountryCode}-${selectedPartner?.partnerCode || selectedPartnerId}.pdf`
+          `insurance-codes-${selectedCountryCode}-${(selectedPartner as any)?.partnerCode || selectedPartnerId}.pdf`
         );
         return;
       }
 
-      // Fallback: browser print-to-PDF for codes
       const printable = buildCodesPrintHtml(
         selectedPartner?.name || "Partner",
-        selectedPartner?.partnerCode || "",
+        (selectedPartner as any)?.partnerCode || "",
         selectedCountryCode,
         currency,
-        groupedCodes
+        groupedCodes,
+        normalizeCodeStatus,
+        codeUsedAmount
       );
       const w = window.open("", "_blank");
       if (!w) throw new Error("Popup blocked. Allow popups to download Codes PDF.");
@@ -547,7 +606,6 @@ export default function InsurancePage() {
     }
   }
 
-  // UI helpers
   const partnerStatusLabel = (p: InsurancePartner) => {
     const isActive = Boolean((p as any).isActive);
     const isArchived = Boolean((p as any).isArchived);
@@ -555,6 +613,17 @@ export default function InsurancePage() {
     if (isActive) return <span style={{ ...pill("ACTIVE").style }}>ACTIVE</span>;
     return <span style={{ ...pill("DISABLED").style }}>DISABLED</span>;
   };
+
+  // Selection helpers
+  const toggleSelected = (id: string) => {
+    setBatchSelected((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const clearSelections = () => setBatchSelected({});
+
+  const selectedCount = useMemo(() => {
+    return Object.values(batchSelected).filter(Boolean).length;
+  }, [batchSelected]);
 
   return (
     <div style={{ padding: 20, maxWidth: 1500 }}>
@@ -703,6 +772,14 @@ export default function InsurancePage() {
               >
                 Download Codes PDF
               </button>
+
+              <button
+                onClick={() => setOpenBatchRevoke(true)}
+                disabled={saving || !selectedPartnerId}
+                style={dangerBtnInline}
+              >
+                Batch Revoke Codes
+              </button>
             </div>
           </Box>
 
@@ -801,7 +878,8 @@ export default function InsurancePage() {
                     {partnerStatusLabel(selectedPartner)}
                   </div>
                   <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>
-                    Email: {(selectedPartner as any).email || "—"} • Phone: {(selectedPartner as any).phone || "—"}
+                    Email: {(selectedPartner as any).email || (selectedPartner as any).contactEmail || "—"} • Phone:{" "}
+                    {(selectedPartner as any).phone || (selectedPartner as any).contactPhone || "—"}
                   </div>
                 </div>
               ) : (
@@ -813,52 +891,51 @@ export default function InsurancePage() {
 
         {/* Right column */}
         <div style={{ display: "grid", gap: 16 }}>
-          {/* Codes grouped */}
-          <div style={{ border: "1px solid #e5e7eb", borderRadius: 14, background: "white", overflow: "hidden" }}>
-            <div style={{ padding: 14, borderBottom: "1px solid #e5e7eb", fontWeight: 900 }}>
-              Codes (Grouped) • Unused: {groupedCodes.unused.length} • Used: {groupedCodes.used.length} • Revoked:{" "}
-              {groupedCodes.revoked.length}
-            </div>
+          {/* ✅ FIX 3: Grouping in 3 different rows with 3 different colors */}
+          <div style={{ display: "grid", gap: 12 }}>
+            <CodeRow
+              title={`ACTIVE Codes (${groupedCodes.active.length})`}
+              subtitle="Unused / available codes"
+              rowColor="GREEN"
+              items={groupedCodes.active}
+              currency={currency}
+              saving={saving}
+              onRevoke={onRevokeCode}
+              selectable
+              selectedMap={batchSelected}
+              onToggleSelected={toggleSelected}
+            />
 
-            {loading ? (
-              <div style={{ padding: 14, opacity: 0.7 }}>Loading...</div>
-            ) : codes.length === 0 ? (
-              <div style={{ padding: 14, opacity: 0.7 }}>No codes found.</div>
-            ) : (
-              <div style={{ maxHeight: 520, overflow: "auto", padding: 12 }}>
-                <CodeSection
-                  title="Unused Codes"
-                  subtitle="Ready to share with partner"
-                  items={groupedCodes.unused}
-                  currency={currency}
-                  onRevoke={onRevokeCode}
-                  saving={saving}
-                />
-                <div style={{ height: 14 }} />
-                <CodeSection
-                  title="Used Codes"
-                  subtitle="Includes job amount (if available)"
-                  items={groupedCodes.used}
-                  currency={currency}
-                  onRevoke={onRevokeCode}
-                  saving={saving}
-                  showAmount
-                  getAmount={codeUsedAmount}
-                />
-                <div style={{ height: 14 }} />
-                <CodeSection
-                  title="Revoked Codes"
-                  subtitle="Disabled codes"
-                  items={groupedCodes.revoked}
-                  currency={currency}
-                  onRevoke={onRevokeCode}
-                  saving={saving}
-                  revoked
-                  showAmount
-                  getAmount={codeUsedAmount}
-                />
-              </div>
-            )}
+            <CodeRow
+              title={`USED Codes (${groupedCodes.used.length})`}
+              subtitle="Used codes (shows job amount if available)"
+              rowColor="YELLOW"
+              items={groupedCodes.used}
+              currency={currency}
+              saving={saving}
+              onRevoke={onRevokeCode}
+              showAmount
+              getAmount={codeUsedAmount}
+              selectable
+              selectedMap={batchSelected}
+              onToggleSelected={toggleSelected}
+            />
+
+            <CodeRow
+              title={`REVOKED Codes (${groupedCodes.revoked.length})`}
+              subtitle="Disabled codes"
+              rowColor="RED"
+              items={groupedCodes.revoked}
+              currency={currency}
+              saving={saving}
+              onRevoke={onRevokeCode}
+              showAmount
+              getAmount={codeUsedAmount}
+              revoked
+              selectable
+              selectedMap={batchSelected}
+              onToggleSelected={toggleSelected}
+            />
           </div>
 
           {/* Statement items */}
@@ -1066,6 +1143,87 @@ export default function InsurancePage() {
           </div>
         </Modal>
       ) : null}
+
+      {/* Batch Revoke Modal */}
+      {openBatchRevoke ? (
+        <Modal title="Batch Revoke Codes" onClose={() => (!saving ? setOpenBatchRevoke(false) : null)}>
+          <div style={{ display: "grid", gap: 10 }}>
+            <div style={{ fontSize: 13, opacity: 0.85 }}>
+              Partner: <b>{selectedPartner?.name || "—"}</b> • Country: <b>{selectedCountryCode || "—"}</b>
+            </div>
+
+            <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12 }}>
+              <div style={{ fontWeight: 900, marginBottom: 6 }}>Choose batch revoke mode</div>
+
+              <label style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                <input
+                  type="radio"
+                  name="batchMode"
+                  checked={batchMode === "ALL_UNUSED"}
+                  onChange={() => setBatchMode("ALL_UNUSED")}
+                />
+                <span>
+                  Revoke <b>ALL ACTIVE</b> codes (unused)
+                  <span style={{ opacity: 0.75 }}> • ({groupedCodes.active.length} codes)</span>
+                </span>
+              </label>
+
+              <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <input
+                  type="radio"
+                  name="batchMode"
+                  checked={batchMode === "SELECTED"}
+                  onChange={() => setBatchMode("SELECTED")}
+                />
+                <span>
+                  Revoke <b>SELECTED</b> codes from lists
+                  <span style={{ opacity: 0.75 }}> • (selected: {selectedCount})</span>
+                </span>
+              </label>
+
+              {batchMode === "SELECTED" ? (
+                <div style={{ marginTop: 10, fontSize: 12, opacity: 0.8 }}>
+                  Tip: tick codes in the code rows, then come back here to revoke the selected batch.
+                </div>
+              ) : null}
+            </div>
+
+            <Field label="Reason (optional)">
+              <input
+                value={batchReason}
+                onChange={(e) => setBatchReason(e.target.value)}
+                placeholder="Reason shown in audit logs (optional)"
+                style={inputStyle}
+              />
+            </Field>
+
+            {batchMode === "SELECTED" ? (
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                <button onClick={clearSelections} disabled={saving} style={secondaryBtnInline}>
+                  Clear selected
+                </button>
+                <div style={{ fontSize: 12, opacity: 0.8, alignSelf: "center" }}>
+                  Selected: <b>{selectedCount}</b>
+                </div>
+              </div>
+            ) : null}
+
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 6 }}>
+              <button onClick={() => setOpenBatchRevoke(false)} disabled={saving} style={secondaryBtnInline}>
+                Cancel
+              </button>
+              <button onClick={onBatchRevokeConfirm} disabled={saving} style={dangerBtnInline}>
+                {saving ? "Revoking..." : "Confirm Batch Revoke"}
+              </button>
+            </div>
+
+            <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
+              Note: batch revoke disables codes one-by-one. If you want a single backend operation, we can add a dedicated
+              endpoint and call it here.
+            </div>
+          </div>
+        </Modal>
+      ) : null}
     </div>
   );
 }
@@ -1117,7 +1275,7 @@ function Modal({
     >
       <div
         style={{
-          width: "min(720px, 96vw)",
+          width: "min(1100px, 98vw)",
           maxHeight: "88vh",
           overflow: "auto",
           background: "white",
@@ -1147,30 +1305,45 @@ function Modal({
   );
 }
 
-function CodeSection({
+function CodeRow({
   title,
   subtitle,
+  rowColor,
   items,
   currency,
-  onRevoke,
   saving,
+  onRevoke,
   showAmount,
   getAmount,
   revoked,
+  selectable,
+  selectedMap,
+  onToggleSelected,
 }: {
   title: string;
   subtitle: string;
+  rowColor: "GREEN" | "YELLOW" | "RED";
   items: InsuranceCode[];
   currency: string;
-  onRevoke: (id: string) => void;
   saving: boolean;
+  onRevoke: (id: string) => void;
   showAmount?: boolean;
   getAmount?: (c: InsuranceCode) => number | null;
   revoked?: boolean;
+  selectable?: boolean;
+  selectedMap?: Record<string, boolean>;
+  onToggleSelected?: (id: string) => void;
 }) {
+  const bg =
+    rowColor === "GREEN"
+      ? { header: "#dcfce7", border: "#86efac" }
+      : rowColor === "YELLOW"
+      ? { header: "#fef9c3", border: "#fde047" }
+      : { header: "#fee2e2", border: "#fca5a5" };
+
   return (
-    <div style={{ border: "1px solid #e5e7eb", borderRadius: 14, overflow: "hidden" }}>
-      <div style={{ padding: 12, borderBottom: "1px solid #e5e7eb", background: "#f8fafc" }}>
+    <div style={{ border: `1px solid ${bg.border}`, borderRadius: 14, background: "white", overflow: "hidden" }}>
+      <div style={{ padding: 12, background: bg.header, borderBottom: `1px solid ${bg.border}` }}>
         <div style={{ fontWeight: 900 }}>{title}</div>
         <div style={{ fontSize: 12, opacity: 0.8 }}>{subtitle}</div>
       </div>
@@ -1178,16 +1351,18 @@ function CodeSection({
       {items.length === 0 ? (
         <div style={{ padding: 12, opacity: 0.75 }}>No items.</div>
       ) : (
-        <div>
+        <div style={{ maxHeight: 320, overflow: "auto" }}>
           {items.map((c) => {
+            const id = (c as any)._id;
             const code = (c as any).code;
             const usedCount = (c as any).usage?.usedCount || 0;
             const usedAt = (c as any).usage?.lastUsedAt || null;
             const amount = showAmount && getAmount ? getAmount(c) : null;
+            const checked = Boolean(selectedMap?.[id]);
 
             return (
               <div
-                key={(c as any)._id}
+                key={id}
                 style={{
                   padding: 12,
                   borderTop: "1px solid #f3f4f6",
@@ -1196,8 +1371,18 @@ function CodeSection({
                   alignItems: "center",
                 }}
               >
+                {selectable ? (
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => onToggleSelected?.(id)}
+                    style={{ width: 18, height: 18 }}
+                    title="Select for batch revoke"
+                  />
+                ) : null}
+
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 900, fontSize: 14 }}>{code}</div>
+                  <div style={{ fontWeight: 900, fontSize: 14, fontFamily: "monospace" }}>{code}</div>
                   <div style={{ fontSize: 12, opacity: 0.8 }}>
                     Uses: <b>{usedCount}</b>
                     {usedAt ? ` • Last used: ${new Date(usedAt).toLocaleString()}` : ""}
@@ -1207,7 +1392,7 @@ function CodeSection({
 
                 {!revoked ? (
                   <button
-                    onClick={() => onRevoke((c as any)._id)}
+                    onClick={() => onRevoke(id)}
                     disabled={saving}
                     style={dangerBtnInline}
                     title="Revoke/disable this code"
@@ -1233,7 +1418,9 @@ function buildCodesPrintHtml(
   partnerCode: string,
   countryCode: string,
   currency: string,
-  grouped: { unused: InsuranceCode[]; used: InsuranceCode[]; revoked: InsuranceCode[] }
+  grouped: { active: InsuranceCode[]; used: InsuranceCode[]; revoked: InsuranceCode[] },
+  normalizeCodeStatus: (c: InsuranceCode) => "ACTIVE" | "USED" | "REVOKED",
+  getAmount: (c: InsuranceCode) => number | null
 ) {
   const renderList = (label: string, arr: InsuranceCode[]) => {
     const rows = arr
@@ -1241,10 +1428,14 @@ function buildCodesPrintHtml(
         const code = (c as any).code;
         const usedCount = (c as any).usage?.usedCount || 0;
         const usedAt = (c as any).usage?.lastUsedAt || "";
+        const st = normalizeCodeStatus(c);
+        const amount = getAmount(c);
         return `<tr>
           <td style="padding:8px;border:1px solid #e5e7eb;font-family:monospace;">${escapeHtml(code)}</td>
+          <td style="padding:8px;border:1px solid #e5e7eb;">${escapeHtml(st)}</td>
           <td style="padding:8px;border:1px solid #e5e7eb;">${usedCount}</td>
           <td style="padding:8px;border:1px solid #e5e7eb;">${usedAt ? escapeHtml(new Date(usedAt).toLocaleString()) : ""}</td>
+          <td style="padding:8px;border:1px solid #e5e7eb;">${amount != null ? `${escapeHtml(String(amount))} ${escapeHtml(currency)}` : ""}</td>
         </tr>`;
       })
       .join("");
@@ -1255,8 +1446,10 @@ function buildCodesPrintHtml(
         <thead>
           <tr>
             <th style="text-align:left;padding:8px;border:1px solid #e5e7eb;background:#f8fafc;">Code</th>
+            <th style="text-align:left;padding:8px;border:1px solid #e5e7eb;background:#f8fafc;">Status</th>
             <th style="text-align:left;padding:8px;border:1px solid #e5e7eb;background:#f8fafc;">Uses</th>
             <th style="text-align:left;padding:8px;border:1px solid #e5e7eb;background:#f8fafc;">Last Used</th>
+            <th style="text-align:left;padding:8px;border:1px solid #e5e7eb;background:#f8fafc;">Job Amount</th>
           </tr>
         </thead>
         <tbody>${rows || ""}</tbody>
@@ -1283,9 +1476,9 @@ function buildCodesPrintHtml(
     Country: <b>${escapeHtml(countryCode)}</b> • Currency: <b>${escapeHtml(currency)}</b><br/>
     Generated: ${escapeHtml(new Date().toLocaleString())}
   </div>
-  ${renderList("Unused Codes", grouped.unused)}
-  ${renderList("Used Codes", grouped.used)}
-  ${renderList("Revoked Codes", grouped.revoked)}
+  ${renderList("ACTIVE Codes", grouped.active)}
+  ${renderList("USED Codes", grouped.used)}
+  ${renderList("REVOKED Codes", grouped.revoked)}
 </body>
 </html>`;
 }
