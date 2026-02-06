@@ -1,3 +1,4 @@
+// dashboard/app/dashboard/insurance/page.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -5,6 +6,8 @@ import {
   createPartner,
   disableCode,
   downloadInvoicePdf,
+  downloadProviderStatementPdf,
+  downloadProvidersSummaryPdf,
   generateCodes,
   getCodes,
   getInvoice,
@@ -60,6 +63,17 @@ function todayYmd() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function saveBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export default function InsurancePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -97,6 +111,7 @@ export default function InsurancePage() {
   const [fromDate, setFromDate] = useState<string>(todayYmd());
   const [toDate, setToDate] = useState<string>(todayYmd());
 
+  // used for individual provider statement PDF
   const [providerIdFilter, setProviderIdFilter] = useState<string>("");
 
   const [invoice, setInvoice] = useState<InvoiceResponse | null>(null);
@@ -282,7 +297,7 @@ export default function InsurancePage() {
     setInvoice(null);
 
     try {
-      const invoice = await getInvoice({
+      const inv = await getInvoice({
         countryCode: selectedCountryCode,
         partnerId: selectedPartnerId,
         month: invoiceMode === "MONTH" ? invoiceMonth : undefined,
@@ -291,7 +306,7 @@ export default function InsurancePage() {
         providerId: providerIdFilter.trim() || undefined,
       });
 
-      setInvoice(invoice);
+      setInvoice(inv);
     } catch (e: any) {
       setError(e?.message || "Invoice fetch failed");
     } finally {
@@ -299,38 +314,85 @@ export default function InsurancePage() {
     }
   }
 
-  async function onDownloadPdf() {
+  function commonPdfArgs() {
+    return {
+      countryCode: selectedCountryCode,
+      partnerId: selectedPartnerId,
+      month: invoiceMode === "MONTH" ? invoiceMonth : undefined,
+      from: invoiceMode === "RANGE" ? fromDate : undefined,
+      to: invoiceMode === "RANGE" ? toDate : undefined,
+    };
+  }
+
+  async function onDownloadPartnerInvoicePdf() {
     if (!selectedCountryCode || !selectedPartnerId) return;
     setSaving(true);
     setError(null);
 
     try {
       const blob = await downloadInvoicePdf({
-        countryCode: selectedCountryCode,
-        partnerId: selectedPartnerId,
-        month: invoiceMode === "MONTH" ? invoiceMonth : undefined,
-        from: invoiceMode === "RANGE" ? fromDate : undefined,
-        to: invoiceMode === "RANGE" ? toDate : undefined,
+        ...commonPdfArgs(),
         providerId: providerIdFilter.trim() || undefined,
       });
 
-      // Trigger browser download
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
+      const label =
+        invoiceMode === "MONTH"
+          ? `partner-invoice-${selectedCountryCode}-${invoiceMonth}.pdf`
+          : `partner-invoice-${selectedCountryCode}-${fromDate}-to-${toDate}.pdf`;
+
+      saveBlob(blob, label);
+    } catch (e: any) {
+      setError(e?.message || "PDF download failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ✅ General statement (all providers owed summary)
+  async function onDownloadProvidersSummaryPdf() {
+    if (!selectedCountryCode || !selectedPartnerId) return;
+    setSaving(true);
+    setError(null);
+
+    try {
+      const blob = await downloadProvidersSummaryPdf(commonPdfArgs());
 
       const label =
         invoiceMode === "MONTH"
-          ? `invoice-${selectedCountryCode}-${invoiceMonth}.pdf`
-          : `invoice-${selectedCountryCode}-${fromDate}-to-${toDate}.pdf`;
+          ? `providers-summary-${selectedCountryCode}-${invoiceMonth}.pdf`
+          : `providers-summary-${selectedCountryCode}-${fromDate}-to-${toDate}.pdf`;
 
-      a.download = label;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      saveBlob(blob, label);
     } catch (e: any) {
-      setError(e?.message || "PDF download failed");
+      setError(e?.message || "Providers summary PDF failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ✅ Individual provider statement (requires providerId)
+  async function onDownloadProviderStatementPdf() {
+    if (!selectedCountryCode || !selectedPartnerId) return;
+    const pid = providerIdFilter.trim();
+    if (!pid) return setError("Paste a Provider/Driver ID to download an individual statement.");
+
+    setSaving(true);
+    setError(null);
+
+    try {
+      const blob = await downloadProviderStatementPdf({
+        ...commonPdfArgs(),
+        providerId: pid,
+      });
+
+      const label =
+        invoiceMode === "MONTH"
+          ? `provider-statement-${selectedCountryCode}-${invoiceMonth}-${pid}.pdf`
+          : `provider-statement-${selectedCountryCode}-${fromDate}-to-${toDate}-${pid}.pdf`;
+
+      saveBlob(blob, label);
+    } catch (e: any) {
+      setError(e?.message || "Provider statement PDF failed");
     } finally {
       setSaving(false);
     }
@@ -525,7 +587,7 @@ export default function InsurancePage() {
               </div>
             )}
 
-            <Field label="Filter by Provider/Driver ID (optional)">
+            <Field label="Provider/Driver ID (for individual provider statement)">
               <input
                 value={providerIdFilter}
                 onChange={(e) => setProviderIdFilter(e.target.value)}
@@ -539,8 +601,23 @@ export default function InsurancePage() {
                 {saving ? "Loading..." : "Generate Invoice"}
               </button>
 
-              <button onClick={onDownloadPdf} disabled={saving || !invoice} style={secondaryBtn}>
-                Download PDF
+              <button onClick={onDownloadPartnerInvoicePdf} disabled={saving || !selectedPartnerId} style={secondaryBtn}>
+                Download Partner Invoice PDF
+              </button>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+              <button onClick={onDownloadProvidersSummaryPdf} disabled={saving || !selectedPartnerId} style={secondaryBtn}>
+                Download Providers Summary PDF
+              </button>
+
+              <button
+                onClick={onDownloadProviderStatementPdf}
+                disabled={saving || !selectedPartnerId || !providerIdFilter.trim()}
+                style={secondaryBtn}
+                title={!providerIdFilter.trim() ? "Paste Provider/Driver ID to enable" : ""}
+              >
+                Download Provider Statement PDF
               </button>
             </div>
 
@@ -550,13 +627,16 @@ export default function InsurancePage() {
                   <b>Total jobs:</b> {invoice.totals.totalJobs}
                 </div>
                 <div>
-                  <b>Total job amount:</b> {invoice.totals.totalEstimatedTotal} {currency}
+                  <b>Gross total (partner owes):</b> {invoice.totals.totalPartnerAmountDue} {currency}
                 </div>
                 <div>
-                  <b>Total booking fee waived:</b> {invoice.totals.totalBookingFeeWaived} {currency}
+                  <b>Booking fee waived:</b> {invoice.totals.totalBookingFeeWaived} {currency}
                 </div>
                 <div>
-                  <b>Total provider amount due:</b> {invoice.totals.totalProviderAmountDue} {currency}
+                  <b>Commission total:</b> {invoice.totals.totalCommission} {currency}
+                </div>
+                <div>
+                  <b>Total provider amount due (NET):</b> {invoice.totals.totalProviderAmountDue} {currency}
                 </div>
               </div>
             ) : null}
@@ -685,10 +765,10 @@ export default function InsurancePage() {
 
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 8 }}>
                       <div style={{ fontSize: 12 }}>
-                        <b>Job amount:</b> {it.pricing.estimatedTotal} {currency}
+                        <b>Gross (job amount):</b> {it.pricing.estimatedTotal} {currency}
                       </div>
                       <div style={{ fontSize: 12 }}>
-                        <b>Provider due:</b> {it.pricing.providerAmountDue} {currency}
+                        <b>Provider due (NET):</b> {it.pricing.providerAmountDue} {currency}
                       </div>
                     </div>
 
@@ -720,7 +800,7 @@ export default function InsurancePage() {
                       <span style={{ opacity: 0.6, fontWeight: 700 }}>• {p.providerId}</span>
                     </div>
                     <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>
-                      Jobs: <b>{p.jobCount}</b> • Total due: <b>{p.totalProviderAmountDue}</b> {currency}
+                      Jobs: <b>{p.jobCount}</b> • Net due: <b>{p.netTotalDue}</b> {currency}
                     </div>
                   </div>
                 ))}

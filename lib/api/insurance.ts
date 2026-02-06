@@ -93,9 +93,10 @@ export type InvoiceResponse = {
     providerId: string | null;
   };
 
+  // ✅ Match backend: invoiceService.js totals
   totals: {
     totalJobs: number;
-    totalEstimatedTotal: number;
+    totalPartnerAmountDue: number;
     totalBookingFeeWaived: number;
     totalCommission: number;
     totalProviderAmountDue: number;
@@ -103,12 +104,6 @@ export type InvoiceResponse = {
 
   items: InvoiceItem[];
 
-  /**
-   * ✅ PROVIDERS OWE SUMMARY
-   * IMPORTANT:
-   * - totalProviderAmountDue MUST exist (dashboard already uses it)
-   * - gross/commission/net are additive for advanced PDFs
-   */
   groupedByProvider: Array<{
     providerId: string;
     name: string | null;
@@ -117,17 +112,13 @@ export type InvoiceResponse = {
 
     jobCount: number;
 
-    /** ✅ DO NOT REMOVE — used by UI */
-    totalProviderAmountDue: number;
-
-    /** ✅ Optional advanced totals */
-    grossTotal?: number;
-    commissionTotal?: number;
-    netTotalDue?: number;
+    // ✅ backend provides these fields
+    grossTotal: number;
+    commissionTotal: number;
+    netTotalDue: number;
 
     currency: string;
 
-    /** ✅ Optional: used for per-provider PDFs */
     jobs?: Array<{
       jobId: string;
       shortId: string;
@@ -164,8 +155,42 @@ function authHeaders(extra: Record<string, string> = {}) {
 
 async function readJson(res: Response) {
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((data as any)?.message || "Request failed");
+  if (!res.ok) {
+    const msg =
+      (data as any)?.message ||
+      (data as any)?.error ||
+      `Request failed (${res.status})`;
+    throw new Error(msg);
+  }
   return data;
+}
+
+async function readPdfOrThrow(res: Response) {
+  const contentType = (res.headers.get("content-type") || "").toLowerCase();
+
+  if (!res.ok) {
+    // Try read json error
+    if (contentType.includes("application/json")) {
+      const data = await res.json().catch(() => ({}));
+      const msg =
+        (data as any)?.message ||
+        (data as any)?.error ||
+        `PDF request failed (${res.status})`;
+      throw new Error(msg);
+    }
+
+    // Non-json error
+    const text = await res.text().catch(() => "");
+    throw new Error(text || `PDF request failed (${res.status})`);
+  }
+
+  if (!contentType.includes("application/pdf")) {
+    // Sometimes reverse proxies return HTML; surface it
+    const text = await res.text().catch(() => "");
+    throw new Error(`Expected PDF but got "${contentType}". ${text ? `Response: ${text.slice(0, 180)}` : ""}`.trim());
+  }
+
+  return res.blob();
 }
 
 export async function getPartners(countryCode: CountryCode) {
@@ -255,6 +280,7 @@ export async function getInvoice(args: {
   return (data?.invoice || null) as InvoiceResponse | null;
 }
 
+// 1) Partner invoice PDF
 export async function downloadInvoicePdf(args: {
   countryCode: CountryCode;
   partnerId: string;
@@ -283,14 +309,67 @@ export async function downloadInvoicePdf(args: {
     })(),
   });
 
-  const contentType = res.headers.get("content-type") || "";
-  if (!res.ok) {
-    if (contentType.includes("application/json")) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error((data as any)?.message || "PDF download failed");
-    }
-    throw new Error("PDF download failed");
-  }
+  return readPdfOrThrow(res);
+}
 
-  return res.blob();
+// 2) Providers summary PDF (general statement)
+export async function downloadProvidersSummaryPdf(args: {
+  countryCode: CountryCode;
+  partnerId: string;
+  month?: string;
+  from?: string;
+  to?: string;
+}) {
+  const qs = new URLSearchParams();
+  qs.set("countryCode", args.countryCode);
+  qs.set("partnerId", args.partnerId);
+
+  if (args.month) qs.set("month", args.month);
+  if (args.from) qs.set("from", args.from);
+  if (args.to) qs.set("to", args.to);
+
+  const res = await fetch(`${API_BASE}/api/admin/insurance/providers/pdf?${qs.toString()}`, {
+    method: "GET",
+    headers: (() => {
+      const token = getToken();
+      return {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        "X-COUNTRY-CODE": args.countryCode,
+      };
+    })(),
+  });
+
+  return readPdfOrThrow(res);
+}
+
+// 3) Provider statement PDF (individual statement)
+export async function downloadProviderStatementPdf(args: {
+  countryCode: CountryCode;
+  partnerId: string;
+  providerId: string;
+  month?: string;
+  from?: string;
+  to?: string;
+}) {
+  const qs = new URLSearchParams();
+  qs.set("countryCode", args.countryCode);
+  qs.set("partnerId", args.partnerId);
+  qs.set("providerId", args.providerId);
+
+  if (args.month) qs.set("month", args.month);
+  if (args.from) qs.set("from", args.from);
+  if (args.to) qs.set("to", args.to);
+
+  const res = await fetch(`${API_BASE}/api/admin/insurance/provider/pdf?${qs.toString()}`, {
+    method: "GET",
+    headers: (() => {
+      const token = getToken();
+      return {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        "X-COUNTRY-CODE": args.countryCode,
+      };
+    })(),
+  });
+
+  return readPdfOrThrow(res);
 }
