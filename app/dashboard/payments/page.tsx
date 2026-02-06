@@ -1,266 +1,407 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { computeProviderOwed, fetchPayments } from "@/lib/api/payments";
+import { useEffect, useMemo, useState } from "react";
 
-type Country = {
+import { ModuleHeader } from "@/components/dashboard/module-header";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+import {
+  fetchAdminPayments,
+  refundPayment,
+  markPaymentPaid,
+} from "@/lib/api/payments";
+
+type Payment = {
   _id: string;
-  code: string;
-  name: string;
+  amount: number;
   currency: string;
-  isActive: boolean;
+  status: string;
+  provider?: string;
+  providerReference?: string;
+  createdAt?: string;
+  paidAt?: string;
+  refundedAt?: string;
+
+  customer?: {
+    name?: string;
+    email?: string;
+  };
+
+  job?: {
+    _id?: string;
+    roleNeeded?: string;
+    status?: string;
+  };
+
+  manualMarkedBy?: {
+    name?: string;
+    email?: string;
+  };
+
+  refundedBy?: {
+    name?: string;
+    email?: string;
+  };
 };
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ||
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  "http://localhost:5000";
-
-function authHeaders(extra: Record<string, string> = {}) {
-  const token =
-    typeof window !== "undefined"
-      ? localStorage.getItem("adminToken") || localStorage.getItem("token")
-      : null;
-
-  return {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...extra,
-  };
-}
-
-function todayYmd() {
-  const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-}
-
 export default function PaymentsPage() {
-  const [countries, setCountries] = useState<Country[]>([]);
-  const [selectedCountryCode, setSelectedCountryCode] = useState<string>("");
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
-  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const [fromDate, setFromDate] = useState<string>(todayYmd());
-  const [toDate, setToDate] = useState<string>(todayYmd());
-  const [providerId, setProviderId] = useState<string>("");
+  const [selected, setSelected] = useState<Payment | null>(null);
 
-  const [payments, setPayments] = useState<any[]>([]);
-  const [result, setResult] = useState<ReturnType<typeof computeProviderOwed> | null>(null);
-
-  const currency = useMemo(() => {
-    const c = countries.find((x) => x.code === selectedCountryCode);
-    return c?.currency || "ZAR";
-  }, [countries, selectedCountryCode]);
-
-  async function loadCountries() {
-    const res = await fetch(`${API_BASE}/api/admin/countries`, {
-      method: "GET",
-      headers: authHeaders(),
-    });
-
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data?.message || "Failed to load countries");
-
-    const list: Country[] = Array.isArray(data?.countries) ? data.countries : [];
-    setCountries(list);
-    if (!selectedCountryCode && list.length > 0) setSelectedCountryCode(list[0].code);
-  }
-
-  useEffect(() => {
-    loadCountries().catch((e: any) => setError(e?.message || "Init failed"));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function run() {
-    if (!selectedCountryCode) return;
+  const loadPayments = async () => {
     setLoading(true);
     setError(null);
-    setResult(null);
-
     try {
-      const p = await fetchPayments(selectedCountryCode);
-      setPayments(p);
-
-      const r = computeProviderOwed({
-        payments: p,
-        providerId: providerId.trim() || undefined,
-        fromYmd: fromDate,
-        toYmd: toDate,
-      });
-
-      setResult(r);
-    } catch (e: any) {
-      setError(e?.message || "Failed");
+      const data = await fetchAdminPayments();
+      setPayments(data?.payments || []);
+    } catch (err: any) {
+      setError(err?.response?.data?.message || "Failed to load payments");
     } finally {
       setLoading(false);
     }
-  }
+  };
+
+  useEffect(() => {
+    loadPayments();
+  }, []);
+
+  const filtered = useMemo(() => {
+    if (!search) return payments;
+    const s = search.toLowerCase();
+    return payments.filter((p) => {
+      return (
+        (p.customer?.name || "").toLowerCase().includes(s) ||
+        (p.customer?.email || "").toLowerCase().includes(s) ||
+        (p.status || "").toLowerCase().includes(s) ||
+        (p.provider || "").toLowerCase().includes(s)
+      );
+    });
+  }, [payments, search]);
+
+  const totals = useMemo(() => {
+    const totalCount = payments.length;
+    const totalPaid = payments
+      .filter((p) => p.status === "PAID")
+      .reduce((sum, p) => sum + (p.amount || 0), 0);
+
+    const pending = payments.filter((p) => p.status === "PENDING").length;
+    const refunded = payments.filter((p) => p.status === "REFUNDED").length;
+
+    return { totalCount, totalPaid, pending, refunded };
+  }, [payments]);
+
+  const getStatusBadge = (status: string) => {
+    if (status === "PAID") return <Badge className="bg-green-600">PAID</Badge>;
+    if (status === "PENDING")
+      return <Badge className="bg-yellow-600">PENDING</Badge>;
+    if (status === "FAILED")
+      return <Badge className="bg-red-600">FAILED</Badge>;
+    if (status === "REFUNDED")
+      return <Badge className="bg-slate-700">REFUNDED</Badge>;
+    return <Badge variant="secondary">{status}</Badge>;
+  };
+
+  const handleRefund = async (paymentId: string) => {
+    const confirm = window.confirm(
+      "Are you sure you want to mark this payment as refunded?"
+    );
+    if (!confirm) return;
+
+    setActionLoadingId(paymentId);
+
+    try {
+      await refundPayment(paymentId);
+      await loadPayments();
+      alert("Payment refunded ✅");
+    } catch (err: any) {
+      alert(err?.response?.data?.message || "Refund failed");
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleMarkPaid = async (jobId?: string, paymentId?: string) => {
+    if (!jobId) {
+      alert("Job ID missing for this payment ❌");
+      return;
+    }
+
+    const confirm = window.confirm(
+      "Are you sure you want to manually mark this payment as PAID?"
+    );
+    if (!confirm) return;
+
+    setActionLoadingId(paymentId || jobId);
+
+    try {
+      await markPaymentPaid(jobId);
+      await loadPayments();
+      alert("Payment marked PAID ✅");
+    } catch (err: any) {
+      alert(err?.response?.data?.message || "Mark paid failed ❌");
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
 
   return (
-    <div style={{ padding: 20, maxWidth: 1400 }}>
-      <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 8 }}>Provider Owed Summary</h1>
-      <p style={{ opacity: 0.8, marginBottom: 18 }}>
-        Filter by date range and optionally by Provider/Driver ID to see how much is due.
-      </p>
+    <div className="space-y-6">
+      <ModuleHeader
+        title="Payments & Financial Controls"
+        description="Track booking fees, payments, refunds, and revenue movement."
+      />
 
-      {error ? (
-        <div
-          style={{
-            background: "#ffefef",
-            border: "1px solid #ffbdbd",
-            padding: 12,
-            borderRadius: 8,
-            marginBottom: 16,
-            color: "#7a0000",
-          }}
-        >
-          {error}
-        </div>
-      ) : null}
+      {/* ✅ Summary Cards */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm text-muted-foreground">
+              Total Payments
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-semibold">{totals.totalCount}</div>
+          </CardContent>
+        </Card>
 
-      <div
-        style={{
-          border: "1px solid #e5e7eb",
-          borderRadius: 12,
-          padding: 16,
-          background: "white",
-          marginBottom: 18,
-          display: "flex",
-          gap: 12,
-          flexWrap: "wrap",
-          alignItems: "end",
-        }}
-      >
-        <div style={{ minWidth: 320 }}>
-          <label style={{ fontSize: 12, opacity: 0.75 }}>Country</label>
-          <select
-            value={selectedCountryCode}
-            onChange={(e) => setSelectedCountryCode(e.target.value)}
-            style={inputStyle}
-          >
-            {countries.map((c) => (
-              <option key={c._id} value={c.code}>
-                {c.code} — {c.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm text-muted-foreground">
+              Total Paid
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-semibold">
+              {totals.totalPaid.toLocaleString()} ZAR
+            </div>
+          </CardContent>
+        </Card>
 
-        <div style={{ minWidth: 220 }}>
-          <label style={{ fontSize: 12, opacity: 0.75 }}>From</label>
-          <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} style={inputStyle} />
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm text-muted-foreground">
+              Pending
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-semibold">{totals.pending}</div>
+          </CardContent>
+        </Card>
 
-        <div style={{ minWidth: 220 }}>
-          <label style={{ fontSize: 12, opacity: 0.75 }}>To</label>
-          <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} style={inputStyle} />
-        </div>
-
-        <div style={{ minWidth: 360 }}>
-          <label style={{ fontSize: 12, opacity: 0.75 }}>Provider/Driver ID (optional)</label>
-          <input
-            value={providerId}
-            onChange={(e) => setProviderId(e.target.value)}
-            placeholder="paste providerId"
-            style={inputStyle}
-          />
-        </div>
-
-        <div style={{ marginLeft: "auto" }}>
-          <button onClick={run} disabled={loading || !selectedCountryCode} style={primaryBtn}>
-            {loading ? "Loading..." : "Compute"}
-          </button>
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm text-muted-foreground">
+              Refunded
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-semibold">{totals.refunded}</div>
+          </CardContent>
+        </Card>
       </div>
 
-      {!result ? (
-        <div style={{ opacity: 0.75 }}>Run compute to see results.</div>
-      ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "520px 1fr", gap: 16 }}>
-          <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, background: "white", overflow: "hidden" }}>
-            <div style={{ padding: 14, borderBottom: "1px solid #e5e7eb", fontWeight: 900 }}>
-              Providers ({result.providers.length})
+      {/* ✅ Search + Table */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-4">
+          <CardTitle className="text-base">Transactions</CardTitle>
+
+          <Input
+            className="max-w-sm"
+            placeholder="Search customer, status, provider..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </CardHeader>
+
+        <CardContent>
+          {loading && (
+            <div className="py-10 text-center text-sm text-muted-foreground">
+              Loading payments...
             </div>
+          )}
 
-            <div style={{ padding: 14, fontSize: 13 }}>
-              <b>Total due (all providers):</b> {result.totalDueAll} {currency}
+          {error && (
+            <div className="py-10 text-center text-sm text-red-600">{error}</div>
+          )}
+
+          {!loading && !error && (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Customer</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Provider</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+
+                <TableBody>
+                  {filtered.length === 0 ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={6}
+                        className="text-center py-8 text-sm text-muted-foreground"
+                      >
+                        No payments found ✅
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filtered.map((p) => (
+                      <TableRow key={p._id}>
+                        <TableCell className="font-medium">
+                          {p.customer?.name || "—"}
+                          <div className="text-xs text-muted-foreground">
+                            {p.customer?.email || ""}
+                          </div>
+                        </TableCell>
+
+                        <TableCell>
+                          {p.amount?.toLocaleString()} {p.currency || "ZAR"}
+                        </TableCell>
+
+                        <TableCell>{getStatusBadge(p.status)}</TableCell>
+
+                        <TableCell>{p.provider || "—"}</TableCell>
+
+                        <TableCell>
+                          {p.createdAt
+                            ? new Date(p.createdAt).toLocaleDateString()
+                            : "—"}
+                        </TableCell>
+
+                        <TableCell className="text-right space-x-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setSelected(p)}
+                          >
+                            View
+                          </Button>
+
+                          {/* ✅ Mark Paid only when pending */}
+                          {p.status === "PENDING" && (
+                            <Button
+                              size="sm"
+                              disabled={actionLoadingId === p._id}
+                              onClick={() =>
+                                handleMarkPaid(p.job?._id, p._id)
+                              }
+                            >
+                              {actionLoadingId === p._id ? "..." : "Mark Paid"}
+                            </Button>
+                          )}
+
+                          {/* ✅ Refund only when paid */}
+                          {p.status === "PAID" && (
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              disabled={actionLoadingId === p._id}
+                              onClick={() => handleRefund(p._id)}
+                            >
+                              {actionLoadingId === p._id ? "..." : "Refund"}
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
             </div>
+          )}
+        </CardContent>
+      </Card>
 
-            <div style={{ maxHeight: 520, overflow: "auto" }}>
-              {result.providers.map((p) => (
-                <div key={p.providerId} style={{ padding: 12, borderBottom: "1px solid #f3f4f6" }}>
-                  <div style={{ fontWeight: 900, fontSize: 13 }}>
-                    {p.providerName || "Unknown Provider"}{" "}
-                    <span style={{ opacity: 0.6, fontWeight: 700 }}>• {p.providerId}</span>
-                  </div>
-                  <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>
-                    Jobs: <b>{p.jobCount}</b> • Total due: <b>{p.totalDue}</b> {currency}
-                  </div>
-                </div>
-              ))}
-              {result.providers.length === 0 ? (
-                <div style={{ padding: 14, opacity: 0.75 }}>No providers found for this filter.</div>
-              ) : null}
+      {/* ✅ Payment Detail Modal */}
+      <Dialog open={!!selected} onOpenChange={() => setSelected(null)}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Payment Details</DialogTitle>
+          </DialogHeader>
+
+          {selected && (
+            <div className="space-y-3 text-sm">
+              <div>
+                <strong>Status:</strong> {selected.status}
+              </div>
+
+              <div>
+                <strong>Amount:</strong>{" "}
+                {selected.amount?.toLocaleString()} {selected.currency}
+              </div>
+
+              <div>
+                <strong>Customer:</strong> {selected.customer?.name} (
+                {selected.customer?.email})
+              </div>
+
+              <div>
+                <strong>Provider:</strong> {selected.provider || "—"}
+              </div>
+
+              <div>
+                <strong>Reference:</strong> {selected.providerReference || "—"}
+              </div>
+
+              <div>
+                <strong>Paid At:</strong>{" "}
+                {selected.paidAt
+                  ? new Date(selected.paidAt).toLocaleString()
+                  : "—"}
+              </div>
+
+              <div>
+                <strong>Manual Marked By:</strong>{" "}
+                {selected.manualMarkedBy?.name
+                  ? `${selected.manualMarkedBy.name} (${selected.manualMarkedBy.email})`
+                  : "—"}
+              </div>
+
+              <div>
+                <strong>Refunded By:</strong>{" "}
+                {selected.refundedBy?.name
+                  ? `${selected.refundedBy.name} (${selected.refundedBy.email})`
+                  : "—"}
+              </div>
+
+              <div>
+                <strong>Refunded At:</strong>{" "}
+                {selected.refundedAt
+                  ? new Date(selected.refundedAt).toLocaleString()
+                  : "—"}
+              </div>
             </div>
-          </div>
-
-          <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, background: "white", overflow: "hidden" }}>
-            <div style={{ padding: 14, borderBottom: "1px solid #e5e7eb", fontWeight: 900 }}>
-              Jobs ({result.rows.length})
-            </div>
-
-            <div style={{ maxHeight: 640, overflow: "auto" }}>
-              {result.rows.map((r) => (
-                <div key={r.jobId} style={{ padding: 12, borderBottom: "1px solid #f3f4f6" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                    <div style={{ fontWeight: 900, fontSize: 13 }}>Job {r.jobId.slice(-8).toUpperCase()}</div>
-                    <div style={{ fontSize: 12, opacity: 0.75 }}>{new Date(r.createdAt).toLocaleString()}</div>
-                  </div>
-
-                  <div style={{ fontSize: 12, marginTop: 6 }}>
-                    <b>Provider:</b> {r.providerName || "-"}{" "}
-                    {r.providerId ? <span style={{ opacity: 0.7 }}>• {r.providerId}</span> : null}
-                  </div>
-                  <div style={{ fontSize: 12, marginTop: 6 }}>
-                    <b>Pickup:</b> {r.pickup || "-"}
-                  </div>
-                  <div style={{ fontSize: 12 }}>
-                    <b>Dropoff:</b> {r.dropoff || "-"}
-                  </div>
-                  <div style={{ fontSize: 12, marginTop: 6 }}>
-                    <b>Provider due:</b> {r.providerAmountDue} {currency}
-                  </div>
-                </div>
-              ))}
-
-              {result.rows.length === 0 ? (
-                <div style={{ padding: 14, opacity: 0.75 }}>No jobs found for this filter.</div>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      )}
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: 10,
-  borderRadius: 10,
-  border: "1px solid #d1d5db",
-};
-
-const primaryBtn: React.CSSProperties = {
-  padding: "12px 14px",
-  borderRadius: 10,
-  border: "1px solid #111827",
-  background: "#111827",
-  color: "white",
-  fontWeight: 900,
-  cursor: "pointer",
-};
