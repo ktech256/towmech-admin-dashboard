@@ -1,10 +1,11 @@
+// dashboard/app/dashboard/insurance/page.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
 import {
   createPartner,
   disableCode,
-  downloadPartnerInvoicePdf,
+  downloadInvoicePdf,
   downloadProviderStatementPdf,
   downloadProvidersSummaryPdf,
   generateCodes,
@@ -62,7 +63,7 @@ function todayYmd() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function triggerDownload(blob: Blob, filename: string) {
+function saveBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -110,6 +111,7 @@ export default function InsurancePage() {
   const [fromDate, setFromDate] = useState<string>(todayYmd());
   const [toDate, setToDate] = useState<string>(todayYmd());
 
+  // used for individual provider statement PDF
   const [providerIdFilter, setProviderIdFilter] = useState<string>("");
 
   const [invoice, setInvoice] = useState<InvoiceResponse | null>(null);
@@ -322,17 +324,23 @@ export default function InsurancePage() {
     };
   }
 
-  async function onDownloadPartnerPdf() {
-    if (!selectedCountryCode || !selectedPartnerId || !invoice) return;
+  async function onDownloadPartnerInvoicePdf() {
+    if (!selectedCountryCode || !selectedPartnerId) return;
     setSaving(true);
     setError(null);
+
     try {
-      const blob = await downloadPartnerInvoicePdf(commonPdfArgs());
+      const blob = await downloadInvoicePdf({
+        ...commonPdfArgs(),
+        providerId: providerIdFilter.trim() || undefined,
+      });
+
       const label =
         invoiceMode === "MONTH"
           ? `partner-invoice-${selectedCountryCode}-${invoiceMonth}.pdf`
           : `partner-invoice-${selectedCountryCode}-${fromDate}-to-${toDate}.pdf`;
-      triggerDownload(blob, label);
+
+      saveBlob(blob, label);
     } catch (e: any) {
       setError(e?.message || "PDF download failed");
     } finally {
@@ -340,46 +348,51 @@ export default function InsurancePage() {
     }
   }
 
-  async function onDownloadProvidersPdf() {
-    if (!selectedCountryCode || !selectedPartnerId || !invoice) return;
+  // ✅ General statement (all providers owed summary)
+  async function onDownloadProvidersSummaryPdf() {
+    if (!selectedCountryCode || !selectedPartnerId) return;
     setSaving(true);
     setError(null);
+
     try {
       const blob = await downloadProvidersSummaryPdf(commonPdfArgs());
+
       const label =
         invoiceMode === "MONTH"
-          ? `providers-owed-${selectedCountryCode}-${invoiceMonth}.pdf`
-          : `providers-owed-${selectedCountryCode}-${fromDate}-to-${toDate}.pdf`;
-      triggerDownload(blob, label);
+          ? `providers-summary-${selectedCountryCode}-${invoiceMonth}.pdf`
+          : `providers-summary-${selectedCountryCode}-${fromDate}-to-${toDate}.pdf`;
+
+      saveBlob(blob, label);
     } catch (e: any) {
-      setError(e?.message || "Providers PDF failed");
+      setError(e?.message || "Providers summary PDF failed");
     } finally {
       setSaving(false);
     }
   }
 
-  async function onDownloadProviderPdf() {
-    if (!selectedCountryCode || !selectedPartnerId || !invoice) return;
-
-    const providerId = providerIdFilter.trim();
-    if (!providerId) {
-      return setError("Enter Provider/Driver ID to download an individual statement.");
-    }
+  // ✅ Individual provider statement (requires providerId)
+  async function onDownloadProviderStatementPdf() {
+    if (!selectedCountryCode || !selectedPartnerId) return;
+    const pid = providerIdFilter.trim();
+    if (!pid) return setError("Paste a Provider/Driver ID to download an individual statement.");
 
     setSaving(true);
     setError(null);
+
     try {
       const blob = await downloadProviderStatementPdf({
         ...commonPdfArgs(),
-        providerId,
+        providerId: pid,
       });
+
       const label =
         invoiceMode === "MONTH"
-          ? `provider-statement-${selectedCountryCode}-${invoiceMonth}-${providerId}.pdf`
-          : `provider-statement-${selectedCountryCode}-${fromDate}-to-${toDate}-${providerId}.pdf`;
-      triggerDownload(blob, label);
+          ? `provider-statement-${selectedCountryCode}-${invoiceMonth}-${pid}.pdf`
+          : `provider-statement-${selectedCountryCode}-${fromDate}-to-${toDate}-${pid}.pdf`;
+
+      saveBlob(blob, label);
     } catch (e: any) {
-      setError(e?.message || "Provider PDF failed");
+      setError(e?.message || "Provider statement PDF failed");
     } finally {
       setSaving(false);
     }
@@ -392,10 +405,10 @@ export default function InsurancePage() {
 
   return (
     <div style={{ padding: 20, maxWidth: 1500 }}>
-      <h1 style={{ fontSize: 26, fontWeight: 900, marginBottom: 6 }}>Insurance Partners</h1>
+      <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 8 }}>Insurance Partners</h1>
       <p style={{ opacity: 0.8, marginBottom: 18 }}>
-        Partners, codes, and insurance-job invoices. Generate invoices by Month or by Date Range, filter by Provider,
-        and export PDFs (General + Individual statements).
+        Partners, codes, and insurance-job invoices. Generate invoices by Month or by Date Range,
+        filter by Provider, and export PDF (when enabled on backend).
       </p>
 
       {error ? (
@@ -404,10 +417,9 @@ export default function InsurancePage() {
             background: "#ffefef",
             border: "1px solid #ffbdbd",
             padding: 12,
-            borderRadius: 10,
+            borderRadius: 8,
             marginBottom: 16,
             color: "#7a0000",
-            fontWeight: 700,
           }}
         >
           {error}
@@ -418,7 +430,7 @@ export default function InsurancePage() {
       <div
         style={{
           border: "1px solid #e5e7eb",
-          borderRadius: 14,
+          borderRadius: 12,
           padding: 16,
           background: "white",
           marginBottom: 18,
@@ -542,7 +554,7 @@ export default function InsurancePage() {
           </Card>
 
           {/* Invoice */}
-          <Card title="Statements & PDFs">
+          <Card title="Invoice Generation">
             <Field label="Mode">
               <select
                 value={invoiceMode}
@@ -575,7 +587,7 @@ export default function InsurancePage() {
               </div>
             )}
 
-            <Field label="Provider/Driver ID (required for Individual statement)">
+            <Field label="Provider/Driver ID (for individual provider statement)">
               <input
                 value={providerIdFilter}
                 onChange={(e) => setProviderIdFilter(e.target.value)}
@@ -584,25 +596,28 @@ export default function InsurancePage() {
               />
             </Field>
 
-            <button onClick={onLoadInvoice} disabled={saving || !selectedPartnerId} style={greenBtn}>
-              {saving ? "Loading..." : "Generate Statement"}
-            </button>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10, marginTop: 10 }}>
-              <button onClick={onDownloadPartnerPdf} disabled={saving || !invoice} style={secondaryBtn}>
-                Download Partner Invoice PDF (Gross)
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <button onClick={onLoadInvoice} disabled={saving || !selectedPartnerId} style={greenBtn}>
+                {saving ? "Loading..." : "Generate Invoice"}
               </button>
 
-              <button onClick={onDownloadProvidersPdf} disabled={saving || !invoice} style={secondaryBtn}>
-                Download General Providers Statement PDF (Summary)
+              <button onClick={onDownloadPartnerInvoicePdf} disabled={saving || !selectedPartnerId} style={secondaryBtn}>
+                Download Partner Invoice PDF
+              </button>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+              <button onClick={onDownloadProvidersSummaryPdf} disabled={saving || !selectedPartnerId} style={secondaryBtn}>
+                Download Providers Summary PDF
               </button>
 
               <button
-                onClick={onDownloadProviderPdf}
-                disabled={saving || !invoice || !providerIdFilter.trim()}
+                onClick={onDownloadProviderStatementPdf}
+                disabled={saving || !selectedPartnerId || !providerIdFilter.trim()}
                 style={secondaryBtn}
+                title={!providerIdFilter.trim() ? "Paste Provider/Driver ID to enable" : ""}
               >
-                Download Individual Provider Statement PDF
+                Download Provider Statement PDF
               </button>
             </div>
 
@@ -612,13 +627,16 @@ export default function InsurancePage() {
                   <b>Total jobs:</b> {invoice.totals.totalJobs}
                 </div>
                 <div>
-                  <b>Partner invoice total (gross):</b> {invoice.totals.totalPartnerAmountDue} {currency}
+                  <b>Gross total (partner owes):</b> {invoice.totals.totalPartnerAmountDue} {currency}
                 </div>
                 <div>
-                  <b>Total booking fee waived:</b> {invoice.totals.totalBookingFeeWaived} {currency}
+                  <b>Booking fee waived:</b> {invoice.totals.totalBookingFeeWaived} {currency}
                 </div>
                 <div>
-                  <b>Total provider amount due (net):</b> {invoice.totals.totalProviderAmountDue} {currency}
+                  <b>Commission total:</b> {invoice.totals.totalCommission} {currency}
+                </div>
+                <div>
+                  <b>Total provider amount due (NET):</b> {invoice.totals.totalProviderAmountDue} {currency}
                 </div>
               </div>
             ) : null}
@@ -628,7 +646,7 @@ export default function InsurancePage() {
         {/* Right column */}
         <div style={{ display: "grid", gap: 16 }}>
           {/* Codes */}
-          <div style={{ border: "1px solid #e5e7eb", borderRadius: 14, background: "white", overflow: "hidden" }}>
+          <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, background: "white", overflow: "hidden" }}>
             <div
               style={{
                 padding: 14,
@@ -711,13 +729,13 @@ export default function InsurancePage() {
           </div>
 
           {/* Invoice Items */}
-          <div style={{ border: "1px solid #e5e7eb", borderRadius: 14, background: "white", overflow: "hidden" }}>
+          <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, background: "white", overflow: "hidden" }}>
             <div style={{ padding: 14, borderBottom: "1px solid #e5e7eb", fontWeight: 900 }}>
-              Statement Items {invoice ? `(${invoice.items.length})` : ""}
+              Invoice Items {invoice ? `(${invoice.items.length})` : ""}
             </div>
 
             {!invoice ? (
-              <div style={{ padding: 14, opacity: 0.7 }}>Generate a statement to see items.</div>
+              <div style={{ padding: 14, opacity: 0.7 }}>Generate an invoice to see items.</div>
             ) : invoice.items.length === 0 ? (
               <div style={{ padding: 14, opacity: 0.7 }}>No insurance jobs in this period.</div>
             ) : (
@@ -747,10 +765,10 @@ export default function InsurancePage() {
 
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 8 }}>
                       <div style={{ fontSize: 12 }}>
-                        <b>Job amount (gross):</b> {it.pricing.estimatedTotal} {currency}
+                        <b>Gross (job amount):</b> {it.pricing.estimatedTotal} {currency}
                       </div>
                       <div style={{ fontSize: 12 }}>
-                        <b>Provider due (net):</b> {it.pricing.providerAmountDue} {currency}
+                        <b>Provider due (NET):</b> {it.pricing.providerAmountDue} {currency}
                       </div>
                     </div>
 
@@ -764,13 +782,13 @@ export default function InsurancePage() {
           </div>
 
           {/* Grouped by provider */}
-          <div style={{ border: "1px solid #e5e7eb", borderRadius: 14, background: "white", overflow: "hidden" }}>
+          <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, background: "white", overflow: "hidden" }}>
             <div style={{ padding: 14, borderBottom: "1px solid #e5e7eb", fontWeight: 900 }}>
-              Providers Owed (from statement)
+              Providers Owed (from invoice)
             </div>
 
             {!invoice ? (
-              <div style={{ padding: 14, opacity: 0.7 }}>Generate statement to see provider totals.</div>
+              <div style={{ padding: 14, opacity: 0.7 }}>Generate invoice to see provider totals.</div>
             ) : invoice.groupedByProvider.length === 0 ? (
               <div style={{ padding: 14, opacity: 0.7 }}>No assigned providers in this period.</div>
             ) : (
@@ -797,7 +815,7 @@ export default function InsurancePage() {
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div style={{ border: "1px solid #e5e7eb", borderRadius: 14, padding: 16, background: "white" }}>
+    <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, background: "white" }}>
       <h2 style={{ fontSize: 16, fontWeight: 900, marginBottom: 10 }}>{title}</h2>
       {children}
     </div>
@@ -845,7 +863,6 @@ const blueBtn: React.CSSProperties = {
 };
 
 const greenBtn: React.CSSProperties = {
-  width: "100%",
   padding: "12px 14px",
   borderRadius: 10,
   border: "1px solid #10b981",

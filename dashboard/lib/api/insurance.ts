@@ -93,15 +93,10 @@ export type InvoiceResponse = {
     providerId: string | null;
   };
 
+  // ✅ Match backend: invoiceService.js totals
   totals: {
     totalJobs: number;
-
-    // ✅ backend now provides these names
     totalPartnerAmountDue: number;
-
-    // Backward compat (older UI name)
-    totalEstimatedTotal?: number;
-
     totalBookingFeeWaived: number;
     totalCommission: number;
     totalProviderAmountDue: number;
@@ -121,9 +116,6 @@ export type InvoiceResponse = {
     grossTotal: number;
     commissionTotal: number;
     netTotalDue: number;
-
-    /** Backward-compat: some UIs show this name */
-    totalProviderAmountDue?: number;
 
     currency: string;
 
@@ -163,19 +155,41 @@ function authHeaders(extra: Record<string, string> = {}) {
 
 async function readJson(res: Response) {
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((data as any)?.message || "Request failed");
+  if (!res.ok) {
+    const msg =
+      (data as any)?.message ||
+      (data as any)?.error ||
+      `Request failed (${res.status})`;
+    throw new Error(msg);
+  }
   return data;
 }
 
-async function readPdfOrThrow(res: Response, fallbackMessage: string) {
-  const contentType = res.headers.get("content-type") || "";
+async function readPdfOrThrow(res: Response) {
+  const contentType = (res.headers.get("content-type") || "").toLowerCase();
+
   if (!res.ok) {
+    // Try read json error
     if (contentType.includes("application/json")) {
       const data = await res.json().catch(() => ({}));
-      throw new Error((data as any)?.message || fallbackMessage);
+      const msg =
+        (data as any)?.message ||
+        (data as any)?.error ||
+        `PDF request failed (${res.status})`;
+      throw new Error(msg);
     }
-    throw new Error(fallbackMessage);
+
+    // Non-json error
+    const text = await res.text().catch(() => "");
+    throw new Error(text || `PDF request failed (${res.status})`);
   }
+
+  if (!contentType.includes("application/pdf")) {
+    // Sometimes reverse proxies return HTML; surface it
+    const text = await res.text().catch(() => "");
+    throw new Error(`Expected PDF but got "${contentType}". ${text ? `Response: ${text.slice(0, 180)}` : ""}`.trim());
+  }
+
   return res.blob();
 }
 
@@ -266,36 +280,39 @@ export async function getInvoice(args: {
   return (data?.invoice || null) as InvoiceResponse | null;
 }
 
-function pdfHeaders(countryCode: CountryCode) {
-  const token = getToken();
-  return {
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    "X-COUNTRY-CODE": countryCode,
-  } as Record<string, string>;
-}
-
-export async function downloadPartnerInvoicePdf(args: {
+// 1) Partner invoice PDF
+export async function downloadInvoicePdf(args: {
   countryCode: CountryCode;
   partnerId: string;
   month?: string;
   from?: string;
   to?: string;
+  providerId?: string;
 }) {
   const qs = new URLSearchParams();
   qs.set("countryCode", args.countryCode);
   qs.set("partnerId", args.partnerId);
+
   if (args.month) qs.set("month", args.month);
   if (args.from) qs.set("from", args.from);
   if (args.to) qs.set("to", args.to);
+  if (args.providerId) qs.set("providerId", args.providerId);
 
   const res = await fetch(`${API_BASE}/api/admin/insurance/invoice/pdf?${qs.toString()}`, {
     method: "GET",
-    headers: pdfHeaders(args.countryCode),
+    headers: (() => {
+      const token = getToken();
+      return {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        "X-COUNTRY-CODE": args.countryCode,
+      };
+    })(),
   });
 
-  return readPdfOrThrow(res, "PDF download failed");
+  return readPdfOrThrow(res);
 }
 
+// 2) Providers summary PDF (general statement)
 export async function downloadProvidersSummaryPdf(args: {
   countryCode: CountryCode;
   partnerId: string;
@@ -306,18 +323,26 @@ export async function downloadProvidersSummaryPdf(args: {
   const qs = new URLSearchParams();
   qs.set("countryCode", args.countryCode);
   qs.set("partnerId", args.partnerId);
+
   if (args.month) qs.set("month", args.month);
   if (args.from) qs.set("from", args.from);
   if (args.to) qs.set("to", args.to);
 
   const res = await fetch(`${API_BASE}/api/admin/insurance/providers/pdf?${qs.toString()}`, {
     method: "GET",
-    headers: pdfHeaders(args.countryCode),
+    headers: (() => {
+      const token = getToken();
+      return {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        "X-COUNTRY-CODE": args.countryCode,
+      };
+    })(),
   });
 
-  return readPdfOrThrow(res, "Providers PDF failed");
+  return readPdfOrThrow(res);
 }
 
+// 3) Provider statement PDF (individual statement)
 export async function downloadProviderStatementPdf(args: {
   countryCode: CountryCode;
   partnerId: string;
@@ -330,27 +355,21 @@ export async function downloadProviderStatementPdf(args: {
   qs.set("countryCode", args.countryCode);
   qs.set("partnerId", args.partnerId);
   qs.set("providerId", args.providerId);
+
   if (args.month) qs.set("month", args.month);
   if (args.from) qs.set("from", args.from);
   if (args.to) qs.set("to", args.to);
 
   const res = await fetch(`${API_BASE}/api/admin/insurance/provider/pdf?${qs.toString()}`, {
     method: "GET",
-    headers: pdfHeaders(args.countryCode),
+    headers: (() => {
+      const token = getToken();
+      return {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        "X-COUNTRY-CODE": args.countryCode,
+      };
+    })(),
   });
 
-  return readPdfOrThrow(res, "Provider PDF failed");
-}
-
-/**
- * Backward-compat: keep old export name working
- */
-export async function downloadInvoicePdf(args: {
-  countryCode: CountryCode;
-  partnerId: string;
-  month?: string;
-  from?: string;
-  to?: string;
-}) {
-  return downloadPartnerInvoicePdf(args);
+  return readPdfOrThrow(res);
 }
