@@ -28,7 +28,6 @@ import {
   computeProviderOwed,
   fetchAdminPayments,
   fetchPayments,
-  markPaymentPaid,
 } from "@/lib/api/payments";
 
 type Country = {
@@ -50,7 +49,6 @@ type Payment = {
   paidAt?: string;
   refundedAt?: string;
 
-  // ✅ backend-added
   refundReason?: string | null;
 
   customer?: {
@@ -63,7 +61,6 @@ type Payment = {
     roleNeeded?: string;
     status?: string;
 
-    // ✅ used to disable refund for insurance jobs
     insurance?: {
       enabled?: boolean;
       code?: string;
@@ -161,7 +158,6 @@ export default function PaymentsPage() {
   const [errorPayments, setErrorPayments] = useState<string | null>(null);
   const [selected, setSelected] = useState<Payment | null>(null);
 
-  // ✅ Refund dialog state
   const [refundOpen, setRefundOpen] = useState(false);
   const [refundTarget, setRefundTarget] = useState<Payment | null>(null);
   const [refundReason, setRefundReason] = useState("");
@@ -249,20 +245,20 @@ export default function PaymentsPage() {
     setRefundOpen(true);
   }
 
-  // ✅ DIRECT backend call (fixes your build error + aligns to backend)
   async function refundViaApi(paymentId: string, reason: string) {
-    const res = await fetch(`${API_BASE}/api/admin/payments/${paymentId}/refund`, {
-      method: "PATCH",
-      headers: authHeaders({
-        "x-country-code": (selectedCountryCode || "ZA").toUpperCase(),
-      }),
-      body: JSON.stringify({ reason }),
-    });
+    const res = await fetch(
+      `${API_BASE}/api/admin/payments/${paymentId}/refund`,
+      {
+        method: "PATCH",
+        headers: authHeaders({
+          "x-country-code": (selectedCountryCode || "ZA").toUpperCase(),
+        }),
+        body: JSON.stringify({ reason }),
+      }
+    );
 
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(data?.message || "Refund failed (API)");
-    }
+    if (!res.ok) throw new Error(data?.message || "Refund failed (API)");
     return data;
   }
 
@@ -292,20 +288,36 @@ export default function PaymentsPage() {
     }
   }
 
+  // ✅ FIX: Mark Paid via DIRECT backend call
+  async function markPaidViaApi(jobId: string) {
+    // 🔁 If your backend uses a different path, change ONLY this line:
+    const url = `${API_BASE}/api/admin/jobs/${jobId}/mark-paid`;
+
+    const res = await fetch(url, {
+      method: "PATCH",
+      headers: authHeaders({
+        "x-country-code": (selectedCountryCode || "ZA").toUpperCase(),
+      }),
+      body: JSON.stringify({}), // backend can ignore
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.message || "Mark paid failed (API)");
+    return data;
+  }
+
   async function handleMarkPaid(jobId?: string, paymentId?: string) {
     if (!jobId) {
       alert("Job ID missing for this payment ❌");
       return;
     }
 
-    const ok = window.confirm(
-      "Are you sure you want to manually mark this payment as PAID?"
-    );
+    const ok = window.confirm("Are you sure you want to mark this as PAID?");
     if (!ok) return;
 
     setActionLoadingId(paymentId || jobId);
     try {
-      await markPaymentPaid(jobId, selectedCountryCode || undefined);
+      await markPaidViaApi(jobId);
       await loadPayments();
       alert("Payment marked PAID ✅");
     } catch (e: any) {
@@ -554,7 +566,6 @@ export default function PaymentsPage() {
                                   </Button>
                                 )}
 
-                                {/* ✅ Refund only for PAID + not insurance */}
                                 {p.status === "PAID" && !insurance && (
                                   <Button
                                     size="sm"
@@ -577,7 +588,6 @@ export default function PaymentsPage() {
             </CardContent>
           </Card>
 
-          {/* View Modal (includes refundReason) */}
           <Dialog open={!!selected} onOpenChange={() => setSelected(null)}>
             <DialogContent className="max-w-xl">
               <DialogHeader>
@@ -596,12 +606,6 @@ export default function PaymentsPage() {
                     <div>
                       <strong>Job Status:</strong> {selected.job?.status || "—"}
                     </div>
-                    {selected.job?.insurance?.enabled ? (
-                      <div className="text-xs text-muted-foreground pt-2">
-                        <b>Insurance:</b> Enabled
-                        {selected.job.insurance.code ? ` • Code: ${selected.job.insurance.code}` : ""}
-                      </div>
-                    ) : null}
                   </div>
 
                   <div className="grid gap-2 rounded-md border p-3">
@@ -632,15 +636,6 @@ export default function PaymentsPage() {
                       <strong>Created:</strong> {fmtDateTime(selected.createdAt)}
                     </div>
                     <div>
-                      <strong>Paid At:</strong> {fmtDateTime(selected.paidAt)}
-                    </div>
-                    <div>
-                      <strong>Refunded At:</strong> {fmtDateTime(selected.refundedAt)}
-                    </div>
-                    <div>
-                      <strong>Refunded By:</strong> {fmtRefundedBy(selected)}
-                    </div>
-                    <div>
                       <strong>Refund Reason:</strong>{" "}
                       {selected.refundReason && String(selected.refundReason).trim()
                         ? selected.refundReason
@@ -652,7 +647,6 @@ export default function PaymentsPage() {
             </DialogContent>
           </Dialog>
 
-          {/* Refund Modal (Reason required) */}
           <Dialog
             open={refundOpen}
             onOpenChange={(v) => {
@@ -681,7 +675,9 @@ export default function PaymentsPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <div className="text-xs text-muted-foreground">Refund reason (required)</div>
+                  <div className="text-xs text-muted-foreground">
+                    Refund reason (required)
+                  </div>
                   <Input
                     value={refundReason}
                     onChange={(e) => setRefundReason(e.target.value)}
@@ -707,7 +703,9 @@ export default function PaymentsPage() {
                     onClick={confirmRefund}
                     disabled={actionLoadingId === refundTarget?._id}
                   >
-                    {actionLoadingId === refundTarget?._id ? "Refunding..." : "Confirm Refund"}
+                    {actionLoadingId === refundTarget?._id
+                      ? "Refunding..."
+                      : "Confirm Refund"}
                   </Button>
                 </div>
               </div>
