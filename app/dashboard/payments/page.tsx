@@ -24,7 +24,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-import { computeProviderOwed, fetchPayments } from "@/lib/api/payments";
+import {
+  computeProviderOwed,
+  fetchAdminPayments,
+  fetchPayments,
+} from "@/lib/api/payments";
 
 type Country = {
   _id: string;
@@ -40,18 +44,19 @@ type Payment = {
   currency: string;
   status: string;
 
-  provider?: string;
+  provider?: string; // e.g. PAYFAST / IKHOKHA / INSURANCE / PAYSTACK
   providerReference?: string;
+
   createdAt?: string;
   paidAt?: string;
 
+  // refund fields
   refundedAt?: string;
   refundedBy?: {
     name?: string;
     email?: string;
   };
-
-  refundReason?: string | null;
+  refundReason?: string; // backend may or may not have this yet
 
   customer?: {
     name?: string;
@@ -60,13 +65,13 @@ type Payment = {
 
   job?: {
     _id?: string;
-    roleNeeded?: string;
+    roleNeeded?: string; // may include INSURANCE depending on your job schema
     status?: string;
+  };
 
-    // If backend doesn't send this, no problem — we still block using provider === "INSURANCE"
-    insurance?: {
-      enabled?: boolean;
-    };
+  manualMarkedBy?: {
+    name?: string;
+    email?: string;
   };
 };
 
@@ -103,9 +108,11 @@ function fmtMoney(n: number, currency: string) {
 
 function getStatusBadge(status: string) {
   if (status === "PAID") return <Badge className="bg-green-600">PAID</Badge>;
-  if (status === "PENDING") return <Badge className="bg-yellow-600">PENDING</Badge>;
+  if (status === "PENDING")
+    return <Badge className="bg-yellow-600">PENDING</Badge>;
   if (status === "FAILED") return <Badge className="bg-red-600">FAILED</Badge>;
-  if (status === "REFUNDED") return <Badge className="bg-slate-700">REFUNDED</Badge>;
+  if (status === "REFUNDED")
+    return <Badge className="bg-slate-700">REFUNDED</Badge>;
   return <Badge variant="secondary">{status}</Badge>;
 }
 
@@ -126,16 +133,24 @@ function fmtRefundedBy(p: Payment) {
 }
 
 function isInsurancePayment(p: Payment) {
-  // Primary: provider says INSURANCE
-  if ((p.provider || "").toUpperCase() === "INSURANCE") return true;
-  // Secondary: job.insurance.enabled
-  if (p.job?.insurance?.enabled === true) return true;
-  return false;
+  const provider = String(p.provider || "").toUpperCase();
+  const roleNeeded = String(p.job?.roleNeeded || "").toUpperCase();
+  return provider === "INSURANCE" || roleNeeded === "INSURANCE";
+}
+
+async function safeJson(res: Response) {
+  try {
+    return await res.json();
+  } catch {
+    return {};
+  }
 }
 
 export default function PaymentsPage() {
+  // Toggle: Customer payments vs Provider owed
   const [view, setView] = useState<"CUSTOMERS" | "PROVIDERS">("CUSTOMERS");
 
+  // Countries (optional)
   const [countries, setCountries] = useState<Country[]>([]);
   const [selectedCountryCode, setSelectedCountryCode] = useState<string>("");
 
@@ -144,6 +159,7 @@ export default function PaymentsPage() {
     return c?.currency || "ZAR";
   }, [countries, selectedCountryCode]);
 
+  // Customer Payments
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loadingPayments, setLoadingPayments] = useState(true);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
@@ -151,7 +167,7 @@ export default function PaymentsPage() {
   const [errorPayments, setErrorPayments] = useState<string | null>(null);
   const [selected, setSelected] = useState<Payment | null>(null);
 
-  // Refund modal
+  // Refund dialog
   const [refundOpen, setRefundOpen] = useState(false);
   const [refundTarget, setRefundTarget] = useState<Payment | null>(null);
   const [refundReason, setRefundReason] = useState("");
@@ -171,7 +187,7 @@ export default function PaymentsPage() {
       headers: authHeaders(),
     });
 
-    const data = await res.json().catch(() => ({}));
+    const data = await safeJson(res);
     if (!res.ok) throw new Error(data?.message || "Failed to load countries");
 
     const list: Country[] = Array.isArray(data?.countries) ? data.countries : [];
@@ -185,20 +201,9 @@ export default function PaymentsPage() {
   async function loadPayments() {
     setLoadingPayments(true);
     setErrorPayments(null);
-
     try {
-      const cc = (selectedCountryCode || "ZA").toUpperCase();
-
-      const res = await fetch(`${API_BASE}/api/admin/payments?country=${cc}`, {
-        method: "GET",
-        headers: authHeaders({
-          "x-country-code": cc,
-        }),
-      });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.message || "Failed to load payments");
-
+      // uses /api/admin/payments (your existing helper)
+      const data = await fetchAdminPayments(selectedCountryCode || undefined);
       setPayments((data?.payments || []) as Payment[]);
     } catch (e: any) {
       setErrorPayments(e?.message || "Failed to load payments");
@@ -208,7 +213,9 @@ export default function PaymentsPage() {
   }
 
   useEffect(() => {
-    loadCountries().catch(() => {});
+    loadCountries().catch(() => {
+      // ignore; page still works without countries
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -242,49 +249,74 @@ export default function PaymentsPage() {
     return { totalCount, totalPaid, pending, refunded };
   }, [payments]);
 
-  function openRefund(p: Payment) {
-    if (isInsurancePayment(p)) {
-      alert("Insurance payments cannot be refunded ❌");
-      return;
-    }
+  /**
+   * ✅ FIX: Route not found was happening because the backend zip shows:
+   * - Mark Paid route is on PUBLIC payments router:
+   *   PATCH /api/payments/job/:jobId/mark-paid
+   * - Refund route is on ADMIN payments router:
+   *   PATCH /api/admin/payments/:id/refund
+   *
+   * So we call them directly here (instead of mismatched helper signatures).
+   */
+
+  async function apiMarkPaymentPaid(jobId: string) {
+    const headers = authHeaders(
+      selectedCountryCode
+        ? { "x-country-code": selectedCountryCode }
+        : {}
+    );
+
+    const res = await fetch(`${API_BASE}/api/payments/job/${jobId}/mark-paid`, {
+      method: "PATCH",
+      headers,
+    });
+
+    const data = await safeJson(res);
+    if (!res.ok) throw new Error(data?.message || "Mark paid failed");
+    return data;
+  }
+
+  async function apiRefundPayment(paymentId: string, reason?: string) {
+    const headers = authHeaders(
+      selectedCountryCode
+        ? { "x-country-code": selectedCountryCode }
+        : {}
+    );
+
+    const res = await fetch(
+      `${API_BASE}/api/admin/payments/${paymentId}/refund`,
+      {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ reason: reason?.trim() || "" }),
+      }
+    );
+
+    const data = await safeJson(res);
+    if (!res.ok) throw new Error(data?.message || "Refund failed");
+    return data;
+  }
+
+  function openRefundDialog(p: Payment) {
     setRefundTarget(p);
     setRefundReason("");
     setRefundOpen(true);
   }
 
   async function confirmRefund() {
-    if (!refundTarget) return;
+    if (!refundTarget?._id) return;
 
-    const reason = refundReason.trim();
-    if (!reason) {
-      alert("Refund reason is required ❌");
-      return;
-    }
+    const ok = window.confirm("Are you sure you want to refund this payment?");
+    if (!ok) return;
 
-    const cc = (selectedCountryCode || "ZA").toUpperCase();
     setActionLoadingId(refundTarget._id);
-
     try {
-      const res = await fetch(
-        `${API_BASE}/api/admin/payments/${refundTarget._id}/refund?country=${cc}`,
-        {
-          method: "PATCH",
-          headers: authHeaders({
-            "x-country-code": cc,
-          }),
-          body: JSON.stringify({ reason }),
-        }
-      );
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.message || "Refund failed");
-
+      await apiRefundPayment(refundTarget._id, refundReason);
+      await loadPayments();
+      alert("Payment refunded ✅");
       setRefundOpen(false);
       setRefundTarget(null);
       setRefundReason("");
-
-      await loadPayments();
-      alert("Payment refunded ✅");
     } catch (e: any) {
       alert(e?.message || "Refund failed");
     } finally {
@@ -298,27 +330,14 @@ export default function PaymentsPage() {
       return;
     }
 
-    const ok = window.confirm("Are you sure you want to mark this as PAID?");
+    const ok = window.confirm(
+      "Are you sure you want to manually mark this payment as PAID?"
+    );
     if (!ok) return;
 
-    const cc = (selectedCountryCode || "ZA").toUpperCase();
     setActionLoadingId(paymentId || jobId);
-
     try {
-      // ✅ IMPORTANT:
-      // This endpoint MUST exist in your backend.
-      // If your backend uses a different mark-paid route, change ONLY this URL:
-      const res = await fetch(`${API_BASE}/api/admin/jobs/${jobId}/mark-paid?country=${cc}`, {
-        method: "PATCH",
-        headers: authHeaders({
-          "x-country-code": cc,
-        }),
-        body: JSON.stringify({}),
-      });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.message || "Mark paid failed");
-
+      await apiMarkPaymentPaid(jobId);
       await loadPayments();
       alert("Payment marked PAID ✅");
     } catch (e: any) {
@@ -362,6 +381,7 @@ export default function PaymentsPage() {
         description="Track booking fees, payments, refunds, and revenue movement."
       />
 
+      {/* Toggle Row */}
       <div className="flex flex-wrap items-center gap-2">
         <Button
           variant={view === "CUSTOMERS" ? "default" : "outline"}
@@ -394,6 +414,7 @@ export default function PaymentsPage() {
         ) : null}
       </div>
 
+      {/* Top Overview */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader>
@@ -442,6 +463,7 @@ export default function PaymentsPage() {
         </Card>
       </div>
 
+      {/* CUSTOMER PAYMENTS */}
       {view === "CUSTOMERS" ? (
         <>
           <Card>
@@ -505,74 +527,74 @@ export default function PaymentsPage() {
                           </TableCell>
                         </TableRow>
                       ) : (
-                        filtered.map((p) => {
-                          const busy = actionLoadingId === p._id;
-                          const insurance = isInsurancePayment(p);
+                        filtered.map((p) => (
+                          <TableRow key={p._id}>
+                            <TableCell className="font-medium">
+                              {p.customer?.name || "—"}
+                              <div className="text-xs text-muted-foreground">
+                                {p.customer?.email || ""}
+                              </div>
+                            </TableCell>
 
-                          return (
-                            <TableRow key={p._id}>
-                              <TableCell className="font-medium">
-                                {p.customer?.name || "—"}
-                                <div className="text-xs text-muted-foreground">
-                                  {p.customer?.email || ""}
-                                </div>
-                              </TableCell>
+                            <TableCell>
+                              {Number(p.amount || 0).toLocaleString()}{" "}
+                              {p.currency || currency}
+                            </TableCell>
 
-                              <TableCell>
-                                {Number(p.amount || 0).toLocaleString()}{" "}
-                                {p.currency || currency}
-                              </TableCell>
+                            <TableCell>{getStatusBadge(p.status)}</TableCell>
 
-                              <TableCell>
-                                <div className="flex items-center gap-2">
-                                  {getStatusBadge(p.status)}
-                                  {insurance ? (
-                                    <Badge variant="secondary" className="border">
-                                      INSURANCE
-                                    </Badge>
-                                  ) : null}
-                                </div>
-                              </TableCell>
+                            <TableCell>{p.provider || "—"}</TableCell>
 
-                              <TableCell>{p.provider || "—"}</TableCell>
+                            <TableCell className="text-xs">
+                              {fmtDateTime(p.paidAt)}
+                            </TableCell>
 
-                              <TableCell className="text-xs">{fmtDateTime(p.paidAt)}</TableCell>
-                              <TableCell className="text-xs">{fmtDateTime(p.refundedAt)}</TableCell>
-                              <TableCell className="text-xs">{fmtRefundedBy(p)}</TableCell>
+                            <TableCell className="text-xs">
+                              {fmtDateTime(p.refundedAt)}
+                            </TableCell>
 
-                              <TableCell className="text-right space-x-2">
+                            <TableCell className="text-xs">
+                              {fmtRefundedBy(p)}
+                            </TableCell>
+
+                            <TableCell className="text-right space-x-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setSelected(p)}
+                              >
+                                View
+                              </Button>
+
+                              {/* Mark Paid (PENDING only) */}
+                              {p.status === "PENDING" && (
                                 <Button
                                   size="sm"
-                                  variant="outline"
-                                  onClick={() => setSelected(p)}
+                                  disabled={actionLoadingId === p._id}
+                                  onClick={() =>
+                                    handleMarkPaid(p.job?._id, p._id)
+                                  }
                                 >
-                                  View
+                                  {actionLoadingId === p._id
+                                    ? "..."
+                                    : "Mark Paid"}
                                 </Button>
+                              )}
 
-                                {p.status === "PENDING" && (
-                                  <Button
-                                    size="sm"
-                                    disabled={busy}
-                                    onClick={() => handleMarkPaid(p.job?._id, p._id)}
-                                  >
-                                    {busy ? "..." : "Mark Paid"}
-                                  </Button>
-                                )}
-
-                                {p.status === "PAID" && !insurance && (
-                                  <Button
-                                    size="sm"
-                                    variant="destructive"
-                                    disabled={busy}
-                                    onClick={() => openRefund(p)}
-                                  >
-                                    {busy ? "..." : "Refund"}
-                                  </Button>
-                                )}
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })
+                              {/* Refund (PAID only) - but NOT for Insurance */}
+                              {p.status === "PAID" && !isInsurancePayment(p) && (
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  disabled={actionLoadingId === p._id}
+                                  onClick={() => openRefundDialog(p)}
+                                >
+                                  {actionLoadingId === p._id ? "..." : "Refund"}
+                                </Button>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))
                       )}
                     </TableBody>
                   </Table>
@@ -581,6 +603,66 @@ export default function PaymentsPage() {
             </CardContent>
           </Card>
 
+          {/* Refund Reason Dialog */}
+          <Dialog open={refundOpen} onOpenChange={setRefundOpen}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Refund Payment</DialogTitle>
+              </DialogHeader>
+
+              <div className="space-y-3 text-sm">
+                <div className="rounded-md border p-3">
+                  <div>
+                    <b>Payment ID:</b>{" "}
+                    {refundTarget?._id ? String(refundTarget._id).slice(-10) : "—"}
+                  </div>
+                  <div className="mt-1">
+                    <b>Amount:</b>{" "}
+                    {refundTarget
+                      ? `${Number(refundTarget.amount || 0).toLocaleString()} ${
+                          refundTarget.currency || currency
+                        }`
+                      : "—"}
+                  </div>
+                  <div className="mt-1">
+                    <b>Provider:</b> {refundTarget?.provider || "—"}
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="text-xs text-muted-foreground">
+                    Refund reason (optional)
+                  </div>
+                  <Input
+                    value={refundReason}
+                    onChange={(e) => setRefundReason(e.target.value)}
+                    placeholder="e.g. Duplicate charge / Customer cancellation"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setRefundOpen(false)}
+                    disabled={!!refundTarget?._id && actionLoadingId === refundTarget._id}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={confirmRefund}
+                    disabled={!!refundTarget?._id && actionLoadingId === refundTarget._id}
+                  >
+                    {refundTarget?._id && actionLoadingId === refundTarget._id
+                      ? "Refunding..."
+                      : "Confirm Refund"}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Payment Detail Modal (Trip/Work Request details only + refund reason display) */}
           <Dialog open={!!selected} onOpenChange={() => setSelected(null)}>
             <DialogContent className="max-w-xl">
               <DialogHeader>
@@ -594,7 +676,8 @@ export default function PaymentsPage() {
                       <strong>Job ID:</strong> {selected.job?._id || "—"}
                     </div>
                     <div>
-                      <strong>Role Needed:</strong> {selected.job?.roleNeeded || "—"}
+                      <strong>Role Needed:</strong>{" "}
+                      {selected.job?.roleNeeded || "—"}
                     </div>
                     <div>
                       <strong>Job Status:</strong> {selected.job?.status || "—"}
@@ -612,7 +695,8 @@ export default function PaymentsPage() {
                       <strong>Provider:</strong> {selected.provider || "—"}
                     </div>
                     <div>
-                      <strong>Provider Ref:</strong> {selected.providerReference || "—"}
+                      <strong>Provider Ref:</strong>{" "}
+                      {selected.providerReference || "—"}
                     </div>
                   </div>
 
@@ -628,83 +712,33 @@ export default function PaymentsPage() {
                     <div>
                       <strong>Created:</strong> {fmtDateTime(selected.createdAt)}
                     </div>
+
+                    <div>
+                      <strong>Paid At:</strong> {fmtDateTime(selected.paidAt)}
+                    </div>
+
+                    <div>
+                      <strong>Refunded At:</strong>{" "}
+                      {fmtDateTime(selected.refundedAt)}
+                    </div>
+
+                    <div>
+                      <strong>Refunded By:</strong> {fmtRefundedBy(selected)}
+                    </div>
+
                     <div>
                       <strong>Refund Reason:</strong>{" "}
-                      {selected.refundReason && String(selected.refundReason).trim()
-                        ? selected.refundReason
-                        : "—"}
+                      {selected.refundReason?.trim() ? selected.refundReason : "—"}
                     </div>
                   </div>
                 </div>
               )}
             </DialogContent>
           </Dialog>
-
-          <Dialog
-            open={refundOpen}
-            onOpenChange={(v) => {
-              setRefundOpen(v);
-              if (!v) {
-                setRefundTarget(null);
-                setRefundReason("");
-              }
-            }}
-          >
-            <DialogContent className="max-w-lg">
-              <DialogHeader>
-                <DialogTitle>Refund Payment</DialogTitle>
-              </DialogHeader>
-
-              <div className="space-y-3 text-sm">
-                <div className="rounded-md border p-3">
-                  <div className="font-semibold">
-                    {refundTarget?.customer?.name || "Customer"} •{" "}
-                    {Number(refundTarget?.amount || 0).toLocaleString()}{" "}
-                    {refundTarget?.currency || currency}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    Payment ID: {refundTarget?._id || "—"}
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="text-xs text-muted-foreground">
-                    Refund reason (required)
-                  </div>
-                  <Input
-                    value={refundReason}
-                    onChange={(e) => setRefundReason(e.target.value)}
-                    placeholder="Example: Customer cancelled, duplicate charge, etc."
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2 pt-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setRefundOpen(false);
-                      setRefundTarget(null);
-                      setRefundReason("");
-                    }}
-                    disabled={actionLoadingId === refundTarget?._id}
-                  >
-                    Cancel
-                  </Button>
-
-                  <Button
-                    variant="destructive"
-                    onClick={confirmRefund}
-                    disabled={actionLoadingId === refundTarget?._id}
-                  >
-                    {actionLoadingId === refundTarget?._id ? "Refunding..." : "Confirm Refund"}
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
         </>
       ) : null}
 
+      {/* PROVIDER OWED */}
       {view === "PROVIDERS" ? (
         <>
           <Card>
@@ -725,12 +759,20 @@ export default function PaymentsPage() {
               <div className="grid gap-3 md:grid-cols-4">
                 <div>
                   <div className="mb-1 text-xs text-muted-foreground">From</div>
-                  <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+                  <Input
+                    type="date"
+                    value={fromDate}
+                    onChange={(e) => setFromDate(e.target.value)}
+                  />
                 </div>
 
                 <div>
                   <div className="mb-1 text-xs text-muted-foreground">To</div>
-                  <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+                  <Input
+                    type="date"
+                    value={toDate}
+                    onChange={(e) => setToDate(e.target.value)}
+                  />
                 </div>
 
                 <div>
@@ -745,7 +787,10 @@ export default function PaymentsPage() {
                 </div>
 
                 <div className="flex items-end gap-2">
-                  <Button onClick={runProviderOwedCompute} disabled={loadingProviders}>
+                  <Button
+                    onClick={runProviderOwedCompute}
+                    disabled={loadingProviders}
+                  >
                     {loadingProviders ? "Computing..." : "Compute"}
                   </Button>
                   <Button
@@ -761,7 +806,9 @@ export default function PaymentsPage() {
               </div>
 
               {!providerResult ? (
-                <div className="text-sm text-muted-foreground">Run compute to see results.</div>
+                <div className="text-sm text-muted-foreground">
+                  Run compute to see results.
+                </div>
               ) : (
                 <div className="grid gap-4 md:grid-cols-2">
                   <Card>
@@ -773,7 +820,8 @@ export default function PaymentsPage() {
                     <CardContent className="space-y-3">
                       <div className="text-sm">
                         <b>Total due (all providers):</b>{" "}
-                        {Number(providerResult.totalDueAll || 0).toLocaleString()} {currency}
+                        {Number(providerResult.totalDueAll || 0).toLocaleString()}{" "}
+                        {currency}
                       </div>
 
                       <div className="max-h-[420px] overflow-auto rounded-md border">
@@ -783,7 +831,10 @@ export default function PaymentsPage() {
                           </div>
                         ) : (
                           providerResult.providers.map((p) => (
-                            <div key={p.providerId} className="border-b p-3 last:border-b-0">
+                            <div
+                              key={p.providerId}
+                              className="border-b p-3 last:border-b-0"
+                            >
                               <div className="text-sm font-semibold">
                                 {p.providerName || "Unknown Provider"}{" "}
                                 <span className="text-xs text-muted-foreground">
@@ -792,7 +843,8 @@ export default function PaymentsPage() {
                               </div>
                               <div className="text-xs text-muted-foreground mt-1">
                                 Jobs: <b>{p.jobCount}</b> • Total due:{" "}
-                                <b>{Number(p.totalDue || 0).toLocaleString()}</b> {currency}
+                                <b>{Number(p.totalDue || 0).toLocaleString()}</b>{" "}
+                                {currency}
                               </div>
                             </div>
                           ))
@@ -815,20 +867,27 @@ export default function PaymentsPage() {
                           </div>
                         ) : (
                           providerResult.rows.map((r) => (
-                            <div key={r.jobId} className="border-b p-3 last:border-b-0">
+                            <div
+                              key={r.jobId}
+                              className="border-b p-3 last:border-b-0"
+                            >
                               <div className="flex items-center justify-between gap-2">
                                 <div className="text-sm font-semibold">
                                   Job {String(r.jobId).slice(-8).toUpperCase()}
                                 </div>
                                 <div className="text-xs text-muted-foreground">
-                                  {r.createdAt ? new Date(r.createdAt).toLocaleString() : ""}
+                                  {r.createdAt
+                                    ? new Date(r.createdAt).toLocaleString()
+                                    : ""}
                                 </div>
                               </div>
 
                               <div className="mt-2 text-xs">
                                 <b>Provider:</b> {r.providerName || "-"}{" "}
                                 {r.providerId ? (
-                                  <span className="text-muted-foreground">• {r.providerId}</span>
+                                  <span className="text-muted-foreground">
+                                    • {r.providerId}
+                                  </span>
                                 ) : null}
                               </div>
 
@@ -841,7 +900,8 @@ export default function PaymentsPage() {
 
                               <div className="mt-2 text-xs">
                                 <b>Provider due:</b>{" "}
-                                {Number(r.providerAmountDue || 0).toLocaleString()} {currency}
+                                {Number(r.providerAmountDue || 0).toLocaleString()}{" "}
+                                {currency}
                               </div>
                             </div>
                           ))
