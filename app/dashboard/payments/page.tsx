@@ -24,11 +24,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-import {
-  computeProviderOwed,
-  fetchAdminPayments,
-  fetchPayments,
-} from "@/lib/api/payments";
+import { computeProviderOwed, fetchPayments } from "@/lib/api/payments";
 
 type Country = {
   _id: string;
@@ -43,11 +39,17 @@ type Payment = {
   amount: number;
   currency: string;
   status: string;
+
   provider?: string;
   providerReference?: string;
   createdAt?: string;
   paidAt?: string;
+
   refundedAt?: string;
+  refundedBy?: {
+    name?: string;
+    email?: string;
+  };
 
   refundReason?: string | null;
 
@@ -61,21 +63,10 @@ type Payment = {
     roleNeeded?: string;
     status?: string;
 
+    // If backend doesn't send this, no problem — we still block using provider === "INSURANCE"
     insurance?: {
       enabled?: boolean;
-      code?: string;
-      partnerId?: string;
     };
-  };
-
-  manualMarkedBy?: {
-    name?: string;
-    email?: string;
-  };
-
-  refundedBy?: {
-    name?: string;
-    email?: string;
   };
 };
 
@@ -112,11 +103,9 @@ function fmtMoney(n: number, currency: string) {
 
 function getStatusBadge(status: string) {
   if (status === "PAID") return <Badge className="bg-green-600">PAID</Badge>;
-  if (status === "PENDING")
-    return <Badge className="bg-yellow-600">PENDING</Badge>;
+  if (status === "PENDING") return <Badge className="bg-yellow-600">PENDING</Badge>;
   if (status === "FAILED") return <Badge className="bg-red-600">FAILED</Badge>;
-  if (status === "REFUNDED")
-    return <Badge className="bg-slate-700">REFUNDED</Badge>;
+  if (status === "REFUNDED") return <Badge className="bg-slate-700">REFUNDED</Badge>;
   return <Badge variant="secondary">{status}</Badge>;
 }
 
@@ -137,7 +126,11 @@ function fmtRefundedBy(p: Payment) {
 }
 
 function isInsurancePayment(p: Payment) {
-  return !!p?.job?.insurance?.enabled;
+  // Primary: provider says INSURANCE
+  if ((p.provider || "").toUpperCase() === "INSURANCE") return true;
+  // Secondary: job.insurance.enabled
+  if (p.job?.insurance?.enabled === true) return true;
+  return false;
 }
 
 export default function PaymentsPage() {
@@ -158,10 +151,12 @@ export default function PaymentsPage() {
   const [errorPayments, setErrorPayments] = useState<string | null>(null);
   const [selected, setSelected] = useState<Payment | null>(null);
 
+  // Refund modal
   const [refundOpen, setRefundOpen] = useState(false);
   const [refundTarget, setRefundTarget] = useState<Payment | null>(null);
   const [refundReason, setRefundReason] = useState("");
 
+  // Provider owed
   const [fromDate, setFromDate] = useState<string>(todayYmd());
   const [toDate, setToDate] = useState<string>(todayYmd());
   const [providerId, setProviderId] = useState<string>("");
@@ -190,8 +185,20 @@ export default function PaymentsPage() {
   async function loadPayments() {
     setLoadingPayments(true);
     setErrorPayments(null);
+
     try {
-      const data = await fetchAdminPayments(selectedCountryCode || undefined);
+      const cc = (selectedCountryCode || "ZA").toUpperCase();
+
+      const res = await fetch(`${API_BASE}/api/admin/payments?country=${cc}`, {
+        method: "GET",
+        headers: authHeaders({
+          "x-country-code": cc,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || "Failed to load payments");
+
       setPayments((data?.payments || []) as Payment[]);
     } catch (e: any) {
       setErrorPayments(e?.message || "Failed to load payments");
@@ -245,23 +252,6 @@ export default function PaymentsPage() {
     setRefundOpen(true);
   }
 
-  async function refundViaApi(paymentId: string, reason: string) {
-    const res = await fetch(
-      `${API_BASE}/api/admin/payments/${paymentId}/refund`,
-      {
-        method: "PATCH",
-        headers: authHeaders({
-          "x-country-code": (selectedCountryCode || "ZA").toUpperCase(),
-        }),
-        body: JSON.stringify({ reason }),
-      }
-    );
-
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data?.message || "Refund failed (API)");
-    return data;
-  }
-
   async function confirmRefund() {
     if (!refundTarget) return;
 
@@ -271,9 +261,23 @@ export default function PaymentsPage() {
       return;
     }
 
+    const cc = (selectedCountryCode || "ZA").toUpperCase();
     setActionLoadingId(refundTarget._id);
+
     try {
-      await refundViaApi(refundTarget._id, reason);
+      const res = await fetch(
+        `${API_BASE}/api/admin/payments/${refundTarget._id}/refund?country=${cc}`,
+        {
+          method: "PATCH",
+          headers: authHeaders({
+            "x-country-code": cc,
+          }),
+          body: JSON.stringify({ reason }),
+        }
+      );
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || "Refund failed");
 
       setRefundOpen(false);
       setRefundTarget(null);
@@ -288,24 +292,6 @@ export default function PaymentsPage() {
     }
   }
 
-  // ✅ FIX: Mark Paid via DIRECT backend call
-  async function markPaidViaApi(jobId: string) {
-    // 🔁 If your backend uses a different path, change ONLY this line:
-    const url = `${API_BASE}/api/admin/jobs/${jobId}/mark-paid`;
-
-    const res = await fetch(url, {
-      method: "PATCH",
-      headers: authHeaders({
-        "x-country-code": (selectedCountryCode || "ZA").toUpperCase(),
-      }),
-      body: JSON.stringify({}), // backend can ignore
-    });
-
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data?.message || "Mark paid failed (API)");
-    return data;
-  }
-
   async function handleMarkPaid(jobId?: string, paymentId?: string) {
     if (!jobId) {
       alert("Job ID missing for this payment ❌");
@@ -315,9 +301,24 @@ export default function PaymentsPage() {
     const ok = window.confirm("Are you sure you want to mark this as PAID?");
     if (!ok) return;
 
+    const cc = (selectedCountryCode || "ZA").toUpperCase();
     setActionLoadingId(paymentId || jobId);
+
     try {
-      await markPaidViaApi(jobId);
+      // ✅ IMPORTANT:
+      // This endpoint MUST exist in your backend.
+      // If your backend uses a different mark-paid route, change ONLY this URL:
+      const res = await fetch(`${API_BASE}/api/admin/jobs/${jobId}/mark-paid?country=${cc}`, {
+        method: "PATCH",
+        headers: authHeaders({
+          "x-country-code": cc,
+        }),
+        body: JSON.stringify({}),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || "Mark paid failed");
+
       await loadPayments();
       alert("Payment marked PAID ✅");
     } catch (e: any) {
@@ -535,17 +536,9 @@ export default function PaymentsPage() {
 
                               <TableCell>{p.provider || "—"}</TableCell>
 
-                              <TableCell className="text-xs">
-                                {fmtDateTime(p.paidAt)}
-                              </TableCell>
-
-                              <TableCell className="text-xs">
-                                {fmtDateTime(p.refundedAt)}
-                              </TableCell>
-
-                              <TableCell className="text-xs">
-                                {fmtRefundedBy(p)}
-                              </TableCell>
+                              <TableCell className="text-xs">{fmtDateTime(p.paidAt)}</TableCell>
+                              <TableCell className="text-xs">{fmtDateTime(p.refundedAt)}</TableCell>
+                              <TableCell className="text-xs">{fmtRefundedBy(p)}</TableCell>
 
                               <TableCell className="text-right space-x-2">
                                 <Button
@@ -703,9 +696,7 @@ export default function PaymentsPage() {
                     onClick={confirmRefund}
                     disabled={actionLoadingId === refundTarget?._id}
                   >
-                    {actionLoadingId === refundTarget?._id
-                      ? "Refunding..."
-                      : "Confirm Refund"}
+                    {actionLoadingId === refundTarget?._id ? "Refunding..." : "Confirm Refund"}
                   </Button>
                 </div>
               </div>
@@ -734,20 +725,12 @@ export default function PaymentsPage() {
               <div className="grid gap-3 md:grid-cols-4">
                 <div>
                   <div className="mb-1 text-xs text-muted-foreground">From</div>
-                  <Input
-                    type="date"
-                    value={fromDate}
-                    onChange={(e) => setFromDate(e.target.value)}
-                  />
+                  <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
                 </div>
 
                 <div>
                   <div className="mb-1 text-xs text-muted-foreground">To</div>
-                  <Input
-                    type="date"
-                    value={toDate}
-                    onChange={(e) => setToDate(e.target.value)}
-                  />
+                  <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
                 </div>
 
                 <div>
@@ -762,10 +745,7 @@ export default function PaymentsPage() {
                 </div>
 
                 <div className="flex items-end gap-2">
-                  <Button
-                    onClick={runProviderOwedCompute}
-                    disabled={loadingProviders}
-                  >
+                  <Button onClick={runProviderOwedCompute} disabled={loadingProviders}>
                     {loadingProviders ? "Computing..." : "Compute"}
                   </Button>
                   <Button
@@ -781,9 +761,7 @@ export default function PaymentsPage() {
               </div>
 
               {!providerResult ? (
-                <div className="text-sm text-muted-foreground">
-                  Run compute to see results.
-                </div>
+                <div className="text-sm text-muted-foreground">Run compute to see results.</div>
               ) : (
                 <div className="grid gap-4 md:grid-cols-2">
                   <Card>
@@ -795,8 +773,7 @@ export default function PaymentsPage() {
                     <CardContent className="space-y-3">
                       <div className="text-sm">
                         <b>Total due (all providers):</b>{" "}
-                        {Number(providerResult.totalDueAll || 0).toLocaleString()}{" "}
-                        {currency}
+                        {Number(providerResult.totalDueAll || 0).toLocaleString()} {currency}
                       </div>
 
                       <div className="max-h-[420px] overflow-auto rounded-md border">
@@ -806,10 +783,7 @@ export default function PaymentsPage() {
                           </div>
                         ) : (
                           providerResult.providers.map((p) => (
-                            <div
-                              key={p.providerId}
-                              className="border-b p-3 last:border-b-0"
-                            >
+                            <div key={p.providerId} className="border-b p-3 last:border-b-0">
                               <div className="text-sm font-semibold">
                                 {p.providerName || "Unknown Provider"}{" "}
                                 <span className="text-xs text-muted-foreground">
@@ -818,8 +792,7 @@ export default function PaymentsPage() {
                               </div>
                               <div className="text-xs text-muted-foreground mt-1">
                                 Jobs: <b>{p.jobCount}</b> • Total due:{" "}
-                                <b>{Number(p.totalDue || 0).toLocaleString()}</b>{" "}
-                                {currency}
+                                <b>{Number(p.totalDue || 0).toLocaleString()}</b> {currency}
                               </div>
                             </div>
                           ))
@@ -842,27 +815,20 @@ export default function PaymentsPage() {
                           </div>
                         ) : (
                           providerResult.rows.map((r) => (
-                            <div
-                              key={r.jobId}
-                              className="border-b p-3 last:border-b-0"
-                            >
+                            <div key={r.jobId} className="border-b p-3 last:border-b-0">
                               <div className="flex items-center justify-between gap-2">
                                 <div className="text-sm font-semibold">
                                   Job {String(r.jobId).slice(-8).toUpperCase()}
                                 </div>
                                 <div className="text-xs text-muted-foreground">
-                                  {r.createdAt
-                                    ? new Date(r.createdAt).toLocaleString()
-                                    : ""}
+                                  {r.createdAt ? new Date(r.createdAt).toLocaleString() : ""}
                                 </div>
                               </div>
 
                               <div className="mt-2 text-xs">
                                 <b>Provider:</b> {r.providerName || "-"}{" "}
                                 {r.providerId ? (
-                                  <span className="text-muted-foreground">
-                                    • {r.providerId}
-                                  </span>
+                                  <span className="text-muted-foreground">• {r.providerId}</span>
                                 ) : null}
                               </div>
 
@@ -875,8 +841,7 @@ export default function PaymentsPage() {
 
                               <div className="mt-2 text-xs">
                                 <b>Provider due:</b>{" "}
-                                {Number(r.providerAmountDue || 0).toLocaleString()}{" "}
-                                {currency}
+                                {Number(r.providerAmountDue || 0).toLocaleString()} {currency}
                               </div>
                             </div>
                           ))
