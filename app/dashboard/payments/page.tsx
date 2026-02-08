@@ -28,7 +28,6 @@ import {
   computeProviderOwed,
   fetchAdminPayments,
   fetchPayments,
-  refundPayment,
   markPaymentPaid,
 } from "@/lib/api/payments";
 
@@ -51,7 +50,7 @@ type Payment = {
   paidAt?: string;
   refundedAt?: string;
 
-  // ✅ NEW in backend model
+  // ✅ backend-added
   refundReason?: string | null;
 
   customer?: {
@@ -64,7 +63,7 @@ type Payment = {
     roleNeeded?: string;
     status?: string;
 
-    // ✅ insurance flag (used to hide refund)
+    // ✅ used to disable refund for insurance jobs
     insurance?: {
       enabled?: boolean;
       code?: string;
@@ -116,9 +115,11 @@ function fmtMoney(n: number, currency: string) {
 
 function getStatusBadge(status: string) {
   if (status === "PAID") return <Badge className="bg-green-600">PAID</Badge>;
-  if (status === "PENDING") return <Badge className="bg-yellow-600">PENDING</Badge>;
+  if (status === "PENDING")
+    return <Badge className="bg-yellow-600">PENDING</Badge>;
   if (status === "FAILED") return <Badge className="bg-red-600">FAILED</Badge>;
-  if (status === "REFUNDED") return <Badge className="bg-slate-700">REFUNDED</Badge>;
+  if (status === "REFUNDED")
+    return <Badge className="bg-slate-700">REFUNDED</Badge>;
   return <Badge variant="secondary">{status}</Badge>;
 }
 
@@ -143,10 +144,8 @@ function isInsurancePayment(p: Payment) {
 }
 
 export default function PaymentsPage() {
-  // Toggle: Customer payments vs Provider owed
   const [view, setView] = useState<"CUSTOMERS" | "PROVIDERS">("CUSTOMERS");
 
-  // Countries
   const [countries, setCountries] = useState<Country[]>([]);
   const [selectedCountryCode, setSelectedCountryCode] = useState<string>("");
 
@@ -155,7 +154,6 @@ export default function PaymentsPage() {
     return c?.currency || "ZAR";
   }, [countries, selectedCountryCode]);
 
-  // Customer payments
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loadingPayments, setLoadingPayments] = useState(true);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
@@ -163,12 +161,11 @@ export default function PaymentsPage() {
   const [errorPayments, setErrorPayments] = useState<string | null>(null);
   const [selected, setSelected] = useState<Payment | null>(null);
 
-  // ✅ Refund modal state
+  // ✅ Refund dialog state
   const [refundOpen, setRefundOpen] = useState(false);
   const [refundTarget, setRefundTarget] = useState<Payment | null>(null);
   const [refundReason, setRefundReason] = useState("");
 
-  // Provider owed
   const [fromDate, setFromDate] = useState<string>(todayYmd());
   const [toDate, setToDate] = useState<string>(todayYmd());
   const [providerId, setProviderId] = useState<string>("");
@@ -208,9 +205,7 @@ export default function PaymentsPage() {
   }
 
   useEffect(() => {
-    loadCountries().catch(() => {
-      // ignore
-    });
+    loadCountries().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -254,6 +249,23 @@ export default function PaymentsPage() {
     setRefundOpen(true);
   }
 
+  // ✅ DIRECT backend call (fixes your build error + aligns to backend)
+  async function refundViaApi(paymentId: string, reason: string) {
+    const res = await fetch(`${API_BASE}/api/admin/payments/${paymentId}/refund`, {
+      method: "PATCH",
+      headers: authHeaders({
+        "x-country-code": (selectedCountryCode || "ZA").toUpperCase(),
+      }),
+      body: JSON.stringify({ reason }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data?.message || "Refund failed (API)");
+    }
+    return data;
+  }
+
   async function confirmRefund() {
     if (!refundTarget) return;
 
@@ -265,8 +277,7 @@ export default function PaymentsPage() {
 
     setActionLoadingId(refundTarget._id);
     try {
-      // ✅ Aligns to backend: PATCH /:id/refund expects body { reason }
-      await refundPayment(refundTarget._id, selectedCountryCode || undefined, { reason });
+      await refundViaApi(refundTarget._id, reason);
 
       setRefundOpen(false);
       setRefundTarget(null);
@@ -287,7 +298,9 @@ export default function PaymentsPage() {
       return;
     }
 
-    const ok = window.confirm("Are you sure you want to manually mark this payment as PAID?");
+    const ok = window.confirm(
+      "Are you sure you want to manually mark this payment as PAID?"
+    );
     if (!ok) return;
 
     setActionLoadingId(paymentId || jobId);
@@ -336,7 +349,6 @@ export default function PaymentsPage() {
         description="Track booking fees, payments, refunds, and revenue movement."
       />
 
-      {/* Toggle Row */}
       <div className="flex flex-wrap items-center gap-2">
         <Button
           variant={view === "CUSTOMERS" ? "default" : "outline"}
@@ -369,11 +381,12 @@ export default function PaymentsPage() {
         ) : null}
       </div>
 
-      {/* Top stats */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm text-muted-foreground">Total Payments</CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">
+              Total Payments
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold">{totals.totalCount}</div>
@@ -382,16 +395,22 @@ export default function PaymentsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm text-muted-foreground">Total Paid</CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">
+              Total Paid
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-semibold">{fmtMoney(totals.totalPaid, currency)}</div>
+            <div className="text-2xl font-semibold">
+              {fmtMoney(totals.totalPaid, currency)}
+            </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm text-muted-foreground">Pending</CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">
+              Pending
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold">{totals.pending}</div>
@@ -400,7 +419,9 @@ export default function PaymentsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm text-muted-foreground">Refunded</CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">
+              Refunded
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold">{totals.refunded}</div>
@@ -408,7 +429,6 @@ export default function PaymentsPage() {
         </Card>
       </div>
 
-      {/* CUSTOMER PAYMENTS */}
       {view === "CUSTOMERS" ? (
         <>
           <Card>
@@ -422,7 +442,11 @@ export default function PaymentsPage() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
-                <Button variant="outline" onClick={loadPayments} disabled={loadingPayments}>
+                <Button
+                  variant="outline"
+                  onClick={loadPayments}
+                  disabled={loadingPayments}
+                >
                   Refresh
                 </Button>
               </div>
@@ -430,11 +454,15 @@ export default function PaymentsPage() {
 
             <CardContent>
               {loadingPayments && (
-                <div className="py-10 text-center text-sm text-muted-foreground">Loading payments...</div>
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  Loading payments...
+                </div>
               )}
 
               {errorPayments && (
-                <div className="py-10 text-center text-sm text-red-600">{errorPayments}</div>
+                <div className="py-10 text-center text-sm text-red-600">
+                  {errorPayments}
+                </div>
               )}
 
               {!loadingPayments && !errorPayments && (
@@ -456,7 +484,10 @@ export default function PaymentsPage() {
                     <TableBody>
                       {filtered.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={8} className="text-center py-8 text-sm text-muted-foreground">
+                          <TableCell
+                            colSpan={8}
+                            className="text-center py-8 text-sm text-muted-foreground"
+                          >
                             No payments found ✅
                           </TableCell>
                         </TableRow>
@@ -469,11 +500,14 @@ export default function PaymentsPage() {
                             <TableRow key={p._id}>
                               <TableCell className="font-medium">
                                 {p.customer?.name || "—"}
-                                <div className="text-xs text-muted-foreground">{p.customer?.email || ""}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {p.customer?.email || ""}
+                                </div>
                               </TableCell>
 
                               <TableCell>
-                                {Number(p.amount || 0).toLocaleString()} {p.currency || currency}
+                                {Number(p.amount || 0).toLocaleString()}{" "}
+                                {p.currency || currency}
                               </TableCell>
 
                               <TableCell>
@@ -489,14 +523,24 @@ export default function PaymentsPage() {
 
                               <TableCell>{p.provider || "—"}</TableCell>
 
-                              <TableCell className="text-xs">{fmtDateTime(p.paidAt)}</TableCell>
+                              <TableCell className="text-xs">
+                                {fmtDateTime(p.paidAt)}
+                              </TableCell>
 
-                              <TableCell className="text-xs">{fmtDateTime(p.refundedAt)}</TableCell>
+                              <TableCell className="text-xs">
+                                {fmtDateTime(p.refundedAt)}
+                              </TableCell>
 
-                              <TableCell className="text-xs">{fmtRefundedBy(p)}</TableCell>
+                              <TableCell className="text-xs">
+                                {fmtRefundedBy(p)}
+                              </TableCell>
 
                               <TableCell className="text-right space-x-2">
-                                <Button size="sm" variant="outline" onClick={() => setSelected(p)}>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setSelected(p)}
+                                >
                                   View
                                 </Button>
 
@@ -533,7 +577,7 @@ export default function PaymentsPage() {
             </CardContent>
           </Card>
 
-          {/* View modal */}
+          {/* View Modal (includes refundReason) */}
           <Dialog open={!!selected} onOpenChange={() => setSelected(null)}>
             <DialogContent className="max-w-xl">
               <DialogHeader>
@@ -552,10 +596,10 @@ export default function PaymentsPage() {
                     <div>
                       <strong>Job Status:</strong> {selected.job?.status || "—"}
                     </div>
-
                     {selected.job?.insurance?.enabled ? (
-                      <div className="pt-2 text-xs text-muted-foreground">
-                        <b>Insurance:</b> Enabled {selected.job?.insurance?.code ? `• Code: ${selected.job.insurance.code}` : ""}
+                      <div className="text-xs text-muted-foreground pt-2">
+                        <b>Insurance:</b> Enabled
+                        {selected.job.insurance.code ? ` • Code: ${selected.job.insurance.code}` : ""}
                       </div>
                     ) : null}
                   </div>
@@ -563,7 +607,9 @@ export default function PaymentsPage() {
                   <div className="grid gap-2 rounded-md border p-3">
                     <div>
                       <strong>Customer:</strong> {selected.customer?.name || "—"}{" "}
-                      <span className="text-muted-foreground">({selected.customer?.email || "—"})</span>
+                      <span className="text-muted-foreground">
+                        ({selected.customer?.email || "—"})
+                      </span>
                     </div>
                     <div>
                       <strong>Provider:</strong> {selected.provider || "—"}
@@ -578,28 +624,27 @@ export default function PaymentsPage() {
                       <strong>Payment Status:</strong> {selected.status || "—"}
                     </div>
                     <div>
-                      <strong>Amount:</strong> {Number(selected.amount || 0).toLocaleString()}{" "}
+                      <strong>Amount:</strong>{" "}
+                      {Number(selected.amount || 0).toLocaleString()}{" "}
                       {selected.currency || currency}
                     </div>
                     <div>
                       <strong>Created:</strong> {fmtDateTime(selected.createdAt)}
                     </div>
-
                     <div>
                       <strong>Paid At:</strong> {fmtDateTime(selected.paidAt)}
                     </div>
-
                     <div>
                       <strong>Refunded At:</strong> {fmtDateTime(selected.refundedAt)}
                     </div>
-
                     <div>
                       <strong>Refunded By:</strong> {fmtRefundedBy(selected)}
                     </div>
-
-                    {/* ✅ NEW: refund reason */}
                     <div>
-                      <strong>Refund Reason:</strong> {selected.refundReason?.trim() ? selected.refundReason : "—"}
+                      <strong>Refund Reason:</strong>{" "}
+                      {selected.refundReason && String(selected.refundReason).trim()
+                        ? selected.refundReason
+                        : "—"}
                     </div>
                   </div>
                 </div>
@@ -607,7 +652,7 @@ export default function PaymentsPage() {
             </DialogContent>
           </Dialog>
 
-          {/* Refund modal */}
+          {/* Refund Modal (Reason required) */}
           <Dialog
             open={refundOpen}
             onOpenChange={(v) => {
@@ -626,7 +671,8 @@ export default function PaymentsPage() {
               <div className="space-y-3 text-sm">
                 <div className="rounded-md border p-3">
                   <div className="font-semibold">
-                    {refundTarget?.customer?.name || "Customer"} • {Number(refundTarget?.amount || 0).toLocaleString()}{" "}
+                    {refundTarget?.customer?.name || "Customer"} •{" "}
+                    {Number(refundTarget?.amount || 0).toLocaleString()}{" "}
                     {refundTarget?.currency || currency}
                   </div>
                   <div className="text-xs text-muted-foreground">
@@ -670,7 +716,6 @@ export default function PaymentsPage() {
         </>
       ) : null}
 
-      {/* PROVIDER OWED */}
       {view === "PROVIDERS" ? (
         <>
           <Card>
@@ -691,16 +736,26 @@ export default function PaymentsPage() {
               <div className="grid gap-3 md:grid-cols-4">
                 <div>
                   <div className="mb-1 text-xs text-muted-foreground">From</div>
-                  <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+                  <Input
+                    type="date"
+                    value={fromDate}
+                    onChange={(e) => setFromDate(e.target.value)}
+                  />
                 </div>
 
                 <div>
                   <div className="mb-1 text-xs text-muted-foreground">To</div>
-                  <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+                  <Input
+                    type="date"
+                    value={toDate}
+                    onChange={(e) => setToDate(e.target.value)}
+                  />
                 </div>
 
                 <div>
-                  <div className="mb-1 text-xs text-muted-foreground">Provider/Driver ID (optional)</div>
+                  <div className="mb-1 text-xs text-muted-foreground">
+                    Provider/Driver ID (optional)
+                  </div>
                   <Input
                     value={providerId}
                     onChange={(e) => setProviderId(e.target.value)}
@@ -709,7 +764,10 @@ export default function PaymentsPage() {
                 </div>
 
                 <div className="flex items-end gap-2">
-                  <Button onClick={runProviderOwedCompute} disabled={loadingProviders}>
+                  <Button
+                    onClick={runProviderOwedCompute}
+                    disabled={loadingProviders}
+                  >
                     {loadingProviders ? "Computing..." : "Compute"}
                   </Button>
                   <Button
@@ -725,7 +783,9 @@ export default function PaymentsPage() {
               </div>
 
               {!providerResult ? (
-                <div className="text-sm text-muted-foreground">Run compute to see results.</div>
+                <div className="text-sm text-muted-foreground">
+                  Run compute to see results.
+                </div>
               ) : (
                 <div className="grid gap-4 md:grid-cols-2">
                   <Card>
@@ -736,23 +796,32 @@ export default function PaymentsPage() {
                     </CardHeader>
                     <CardContent className="space-y-3">
                       <div className="text-sm">
-                        <b>Total due (all providers):</b> {Number(providerResult.totalDueAll || 0).toLocaleString()}{" "}
+                        <b>Total due (all providers):</b>{" "}
+                        {Number(providerResult.totalDueAll || 0).toLocaleString()}{" "}
                         {currency}
                       </div>
 
                       <div className="max-h-[420px] overflow-auto rounded-md border">
                         {providerResult.providers.length === 0 ? (
-                          <div className="p-4 text-sm text-muted-foreground">No providers found for this filter.</div>
+                          <div className="p-4 text-sm text-muted-foreground">
+                            No providers found for this filter.
+                          </div>
                         ) : (
                           providerResult.providers.map((p) => (
-                            <div key={p.providerId} className="border-b p-3 last:border-b-0">
+                            <div
+                              key={p.providerId}
+                              className="border-b p-3 last:border-b-0"
+                            >
                               <div className="text-sm font-semibold">
                                 {p.providerName || "Unknown Provider"}{" "}
-                                <span className="text-xs text-muted-foreground">• {p.providerId}</span>
+                                <span className="text-xs text-muted-foreground">
+                                  • {p.providerId}
+                                </span>
                               </div>
                               <div className="text-xs text-muted-foreground mt-1">
                                 Jobs: <b>{p.jobCount}</b> • Total due:{" "}
-                                <b>{Number(p.totalDue || 0).toLocaleString()}</b> {currency}
+                                <b>{Number(p.totalDue || 0).toLocaleString()}</b>{" "}
+                                {currency}
                               </div>
                             </div>
                           ))
@@ -770,22 +839,33 @@ export default function PaymentsPage() {
                     <CardContent>
                       <div className="max-h-[520px] overflow-auto rounded-md border">
                         {providerResult.rows.length === 0 ? (
-                          <div className="p-4 text-sm text-muted-foreground">No jobs found for this filter.</div>
+                          <div className="p-4 text-sm text-muted-foreground">
+                            No jobs found for this filter.
+                          </div>
                         ) : (
                           providerResult.rows.map((r) => (
-                            <div key={r.jobId} className="border-b p-3 last:border-b-0">
+                            <div
+                              key={r.jobId}
+                              className="border-b p-3 last:border-b-0"
+                            >
                               <div className="flex items-center justify-between gap-2">
                                 <div className="text-sm font-semibold">
                                   Job {String(r.jobId).slice(-8).toUpperCase()}
                                 </div>
                                 <div className="text-xs text-muted-foreground">
-                                  {r.createdAt ? new Date(r.createdAt).toLocaleString() : ""}
+                                  {r.createdAt
+                                    ? new Date(r.createdAt).toLocaleString()
+                                    : ""}
                                 </div>
                               </div>
 
                               <div className="mt-2 text-xs">
                                 <b>Provider:</b> {r.providerName || "-"}{" "}
-                                {r.providerId ? <span className="text-muted-foreground">• {r.providerId}</span> : null}
+                                {r.providerId ? (
+                                  <span className="text-muted-foreground">
+                                    • {r.providerId}
+                                  </span>
+                                ) : null}
                               </div>
 
                               <div className="mt-1 text-xs">
@@ -796,7 +876,9 @@ export default function PaymentsPage() {
                               </div>
 
                               <div className="mt-2 text-xs">
-                                <b>Provider due:</b> {Number(r.providerAmountDue || 0).toLocaleString()} {currency}
+                                <b>Provider due:</b>{" "}
+                                {Number(r.providerAmountDue || 0).toLocaleString()}{" "}
+                                {currency}
                               </div>
                             </div>
                           ))
