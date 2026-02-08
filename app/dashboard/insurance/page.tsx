@@ -87,6 +87,68 @@ function safeTrimOrNull(v: any) {
   return s ? s : null;
 }
 
+/**
+ * ✅ Workspace country fallback
+ * Insurance page must NOT require canManageCountries (countries list endpoint).
+ * If /api/admin/countries is forbidden, we fall back to the currently selected workspace country
+ * stored in localStorage, and proceed with insurance operations for that country.
+ */
+function getWorkspaceCountryCodeFallback(): string {
+  if (typeof window === "undefined") return "ZA";
+
+  const candidates = [
+    "countryCode",
+    "selectedCountryCode",
+    "workspaceCountryCode",
+    "adminCountryCode",
+    "x-country-code",
+    "COUNTRY_CODE",
+  ];
+
+  for (const k of candidates) {
+    const v = localStorage.getItem(k);
+    if (v && String(v).trim()) return String(v).trim().toUpperCase();
+  }
+
+  // Some apps store a JSON “user” object
+  try {
+    const rawUser = localStorage.getItem("user");
+    if (rawUser) {
+      const u = JSON.parse(rawUser);
+      const cc =
+        u?.countryCode ||
+        u?.country ||
+        u?.workspaceCountryCode ||
+        u?.profile?.countryCode ||
+        null;
+      if (cc) return String(cc).trim().toUpperCase();
+    }
+  } catch {
+    // ignore
+  }
+
+  return "ZA";
+}
+
+function currencyByCountry(code: string): string {
+  const cc = String(code || "").toUpperCase();
+  const map: Record<string, string> = {
+    ZA: "ZAR",
+    TZ: "TSH",
+    KE: "KES",
+    NG: "NGN",
+    GH: "GHS",
+    UG: "UGX",
+    RW: "RWF",
+    ZM: "ZMW",
+    BW: "BWP",
+    NA: "NAD",
+    MZ: "MZN",
+    AO: "AOA",
+  };
+  return map[cc] || "—";
+}
+
 export default function InsurancePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -105,7 +167,8 @@ export default function InsurancePage() {
 
   const currency = useMemo(() => {
     const c = countries.find((x) => x.code === selectedCountryCode);
-    return c?.currency || "—";
+    // If countries list is fallback stub, still provide a currency guess.
+    return c?.currency || currencyByCountry(selectedCountryCode) || "—";
   }, [countries, selectedCountryCode]);
 
   const [codes, setCodes] = useState<InsuranceCode[]>([]);
@@ -132,8 +195,12 @@ export default function InsurancePage() {
 
   // Batch revoke codes
   const [openBatchRevoke, setOpenBatchRevoke] = useState(false);
-  const [batchMode, setBatchMode] = useState<"ALL_UNUSED" | "SELECTED">("ALL_UNUSED");
-  const [batchSelected, setBatchSelected] = useState<Record<string, boolean>>({});
+  const [batchMode, setBatchMode] = useState<"ALL_UNUSED" | "SELECTED">(
+    "ALL_UNUSED"
+  );
+  const [batchSelected, setBatchSelected] = useState<Record<string, boolean>>(
+    {}
+  );
   const [batchReason, setBatchReason] = useState("");
 
   // Invoice filters
@@ -147,19 +214,75 @@ export default function InsurancePage() {
 
   // Helpers: partner list + codes
   async function loadCountries() {
-    const res = await fetch(`${API_BASE}/api/admin/countries`, {
-      method: "GET",
-      headers: authHeaders(),
-    });
+    // ✅ Attempt to load full countries list (SuperAdmin / admins with canManageCountries)
+    // ✅ If forbidden, fallback to workspace country from localStorage and continue.
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/countries`, {
+        method: "GET",
+        headers: authHeaders(),
+      });
 
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data?.message || "Failed to load countries");
+      const data = await res.json().catch(() => ({}));
 
-    const list: Country[] = Array.isArray(data?.countries) ? data.countries : [];
-    setCountries(list);
+      if (!res.ok) {
+        const msg = String(data?.message || "").toLowerCase();
+        const looksLikeCountriesPermission =
+          res.status === 403 ||
+          msg.includes("canmanagecountries") ||
+          msg.includes("missing canmanagecountries") ||
+          msg.includes("permission denied");
 
-    if (!selectedCountryCode && list.length > 0) {
-      setSelectedCountryCode(list[0].code);
+        if (looksLikeCountriesPermission) {
+          const cc = getWorkspaceCountryCodeFallback();
+          const stub: Country = {
+            _id: "workspace-country",
+            code: cc,
+            name: cc,
+            currency: currencyByCountry(cc),
+            isActive: true,
+          };
+          setCountries([stub]);
+          if (!selectedCountryCode) setSelectedCountryCode(cc);
+          return;
+        }
+
+        throw new Error(data?.message || "Failed to load countries");
+      }
+
+      const list: Country[] = Array.isArray(data?.countries)
+        ? data.countries
+        : [];
+      setCountries(list);
+
+      if (!selectedCountryCode && list.length > 0) {
+        setSelectedCountryCode(list[0].code);
+      }
+
+      // If list is empty (edge), also fallback to workspace country
+      if (list.length === 0) {
+        const cc = getWorkspaceCountryCodeFallback();
+        const stub: Country = {
+          _id: "workspace-country",
+          code: cc,
+          name: cc,
+          currency: currencyByCountry(cc),
+          isActive: true,
+        };
+        setCountries([stub]);
+        if (!selectedCountryCode) setSelectedCountryCode(cc);
+      }
+    } catch (e: any) {
+      // Network errors: also fallback, don’t block insurance usage.
+      const cc = getWorkspaceCountryCodeFallback();
+      const stub: Country = {
+        _id: "workspace-country",
+        code: cc,
+        name: cc,
+        currency: currencyByCountry(cc),
+        isActive: true,
+      };
+      setCountries([stub]);
+      if (!selectedCountryCode) setSelectedCountryCode(cc);
     }
   }
 
@@ -190,6 +313,7 @@ export default function InsurancePage() {
     try {
       await loadCountries();
     } catch (e: any) {
+      // With the new fallback logic, we should almost never hit this.
       setError(e?.message || "Failed to init");
     } finally {
       setLoading(false);
@@ -281,19 +405,22 @@ export default function InsurancePage() {
     setError(null);
 
     try {
-      // ✅ FIX 1: send both naming variants so backend definitely persists
+      // ✅ send both naming variants so backend definitely persists
       const email = safeTrimOrNull(newPartnerEmail);
       const phone = safeTrimOrNull(newPartnerPhone);
 
-      await createPartner(selectedCountryCode, {
-        name,
-        partnerCode,
-        email,
-        phone,
-        contactEmail: email,
-        contactPhone: phone,
-        countryCodes: [selectedCountryCode],
-      } as any);
+      await createPartner(
+        selectedCountryCode,
+        {
+          name,
+          partnerCode,
+          email,
+          phone,
+          contactEmail: email,
+          contactPhone: phone,
+          countryCodes: [selectedCountryCode],
+        } as any
+      );
 
       setNewPartnerName("");
       setNewPartnerCode("");
@@ -332,20 +459,24 @@ export default function InsurancePage() {
     setError(null);
 
     try {
-      // ✅ FIX 1: update both naming variants too
+      // ✅ update both naming variants too
       const email = safeTrimOrNull(editEmail);
       const phone = safeTrimOrNull(editPhone);
 
-      await updatePartner(selectedCountryCode, editPartner._id, {
-        name,
-        partnerCode,
-        email,
-        phone,
-        contactEmail: email,
-        contactPhone: phone,
-        isActive: editIsActive,
-        isArchived: editIsArchived,
-      } as any);
+      await updatePartner(
+        selectedCountryCode,
+        editPartner._id,
+        {
+          name,
+          partnerCode,
+          email,
+          phone,
+          contactEmail: email,
+          contactPhone: phone,
+          isActive: editIsActive,
+          isArchived: editIsArchived,
+        } as any
+      );
 
       setOpenEdit(false);
       setEditPartner(null);
@@ -363,7 +494,9 @@ export default function InsurancePage() {
     setSaving(true);
     setError(null);
     try {
-      await updatePartner(selectedCountryCode, partnerId, { isActive: nextActive } as any);
+      await updatePartner(selectedCountryCode, partnerId, {
+        isActive: nextActive,
+      } as any);
       await reloadPartners(selectedCountryCode, true);
     } catch (e: any) {
       setError(e?.message || "Update partner failed");
@@ -372,12 +505,17 @@ export default function InsurancePage() {
     }
   }
 
-  async function togglePartnerArchived(partnerId: string, nextArchived: boolean) {
+  async function togglePartnerArchived(
+    partnerId: string,
+    nextArchived: boolean
+  ) {
     if (!selectedCountryCode) return;
     setSaving(true);
     setError(null);
     try {
-      await updatePartner(selectedCountryCode, partnerId, { isArchived: nextArchived } as any);
+      await updatePartner(selectedCountryCode, partnerId, {
+        isArchived: nextArchived,
+      } as any);
       await reloadPartners(selectedCountryCode, true);
     } catch (e: any) {
       setError(e?.message || "Archive update failed");
@@ -390,7 +528,8 @@ export default function InsurancePage() {
     if (!selectedCountryCode || !selectedPartnerId) return;
 
     const count = Number(generateCount || 0);
-    if (!count || count < 1 || count > 5000) return setError("Enter a valid number (1 - 5000)");
+    if (!count || count < 1 || count > 5000)
+      return setError("Enter a valid number (1 - 5000)");
 
     setSaving(true);
     setError(null);
@@ -424,7 +563,7 @@ export default function InsurancePage() {
     }
   }
 
-  // ✅ FIX 2: Batch revoke (all ACTIVE, or selected)
+  // Batch revoke
   async function onBatchRevokeConfirm() {
     if (!selectedCountryCode || !selectedPartnerId) return;
 
@@ -448,9 +587,11 @@ export default function InsurancePage() {
 
     try {
       // Best effort: run sequentially to avoid rate-limits / backend constraints
+      // If disableCode supports a reason payload in your api layer, wire it there.
+      // (Keeping reason here for future endpoint enhancement)
+      void reason;
+
       for (const c of targets) {
-        // If your disableCode endpoint supports a reason payload, you can change this in api layer.
-        // Here we just call disableCode as imported.
         await disableCode(selectedCountryCode, (c as any)._id);
       }
 
@@ -540,7 +681,10 @@ export default function InsurancePage() {
     if (!selectedCountryCode || !selectedPartnerId || !invoice) return;
 
     const providerId = providerIdFilter.trim();
-    if (!providerId) return setError("Enter Provider/Driver ID to download an individual statement.");
+    if (!providerId)
+      return setError(
+        "Enter Provider/Driver ID to download an individual statement."
+      );
 
     setSaving(true);
     setError(null);
@@ -578,7 +722,9 @@ export default function InsurancePage() {
         const blob = await res.blob();
         triggerDownload(
           blob,
-          `insurance-codes-${selectedCountryCode}-${(selectedPartner as any)?.partnerCode || selectedPartnerId}.pdf`
+          `insurance-codes-${selectedCountryCode}-${
+            (selectedPartner as any)?.partnerCode || selectedPartnerId
+          }.pdf`
         );
         return;
       }
@@ -627,7 +773,9 @@ export default function InsurancePage() {
 
   return (
     <div style={{ padding: 20, maxWidth: 1500 }}>
-      <h1 style={{ fontSize: 26, fontWeight: 900, marginBottom: 6 }}>Insurance Partners</h1>
+      <h1 style={{ fontSize: 26, fontWeight: 900, marginBottom: 6 }}>
+        Insurance Partners
+      </h1>
       <p style={{ opacity: 0.8, marginBottom: 18 }}>
         Partners, codes, and insurance-job invoices. Generate invoices by Month or by Date Range, filter by Provider,
         and export PDFs (General + Individual statements).
@@ -676,6 +824,11 @@ export default function InsurancePage() {
               </option>
             ))}
           </select>
+          {countries.length === 1 && countries[0]?._id === "workspace-country" ? (
+            <div style={{ fontSize: 12, opacity: 0.75, marginTop: 6 }}>
+              Using your current <b>Country workspace</b> (no Countries permission required).
+            </div>
+          ) : null}
         </div>
 
         <div style={{ minWidth: 460 }}>
@@ -689,7 +842,11 @@ export default function InsurancePage() {
               <option key={p._id} value={p._id}>
                 {p.name}
                 {(p as any).partnerCode ? ` (${(p as any).partnerCode})` : ""}
-                {Boolean((p as any).isArchived) ? " (archived)" : Boolean((p as any).isActive) ? "" : " (disabled)"}
+                {Boolean((p as any).isArchived)
+                  ? " (archived)"
+                  : Boolean((p as any).isActive)
+                  ? ""
+                  : " (disabled)"}
               </option>
             ))}
           </select>
@@ -702,24 +859,34 @@ export default function InsurancePage() {
 
           {selectedPartner ? (
             <>
-              <button
-                onClick={() => openEditPartner(selectedPartner)}
-                disabled={saving}
-                style={secondaryBtnInline}
-              >
+              <button onClick={() => openEditPartner(selectedPartner)} disabled={saving} style={secondaryBtnInline}>
                 Edit Partner
               </button>
 
               <button
-                onClick={() => togglePartnerActive(selectedPartner._id, !Boolean((selectedPartner as any).isActive))}
+                onClick={() =>
+                  togglePartnerActive(
+                    selectedPartner._id,
+                    !Boolean((selectedPartner as any).isActive)
+                  )
+                }
                 disabled={saving}
-                style={Boolean((selectedPartner as any).isActive) ? dangerBtnInline : successBtnInline}
+                style={
+                  Boolean((selectedPartner as any).isActive)
+                    ? dangerBtnInline
+                    : successBtnInline
+                }
               >
                 {Boolean((selectedPartner as any).isActive) ? "Disable" : "Enable"}
               </button>
 
               <button
-                onClick={() => togglePartnerArchived(selectedPartner._id, !Boolean((selectedPartner as any).isArchived))}
+                onClick={() =>
+                  togglePartnerArchived(
+                    selectedPartner._id,
+                    !Boolean((selectedPartner as any).isArchived)
+                  )
+                }
                 disabled={saving}
                 style={warningBtnInline}
               >
@@ -765,19 +932,11 @@ export default function InsurancePage() {
             </div>
 
             <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
-              <button
-                onClick={onDownloadCodesPdf}
-                disabled={saving || !selectedPartnerId}
-                style={purpleBtnInline}
-              >
+              <button onClick={onDownloadCodesPdf} disabled={saving || !selectedPartnerId} style={purpleBtnInline}>
                 Download Codes PDF
               </button>
 
-              <button
-                onClick={() => setOpenBatchRevoke(true)}
-                disabled={saving || !selectedPartnerId}
-                style={dangerBtnInline}
-              >
+              <button onClick={() => setOpenBatchRevoke(true)} disabled={saving || !selectedPartnerId} style={dangerBtnInline}>
                 Batch Revoke Codes
               </button>
             </div>
@@ -838,11 +997,7 @@ export default function InsurancePage() {
                 Download General Providers Statement PDF (Summary)
               </button>
 
-              <button
-                onClick={onDownloadProviderPdf}
-                disabled={saving || !invoice || !providerIdFilter.trim()}
-                style={btnPurple}
-              >
+              <button onClick={onDownloadProviderPdf} disabled={saving || !invoice || !providerIdFilter.trim()} style={btnPurple}>
                 Download Individual Provider Statement PDF
               </button>
             </div>
@@ -874,8 +1029,7 @@ export default function InsurancePage() {
                 <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12 }}>
                   <div style={{ fontWeight: 900 }}>{selectedPartner.name}</div>
                   <div style={{ fontSize: 12, opacity: 0.8 }}>
-                    Code: <b>{(selectedPartner as any).partnerCode || "—"}</b> • Status:{" "}
-                    {partnerStatusLabel(selectedPartner)}
+                    Code: <b>{(selectedPartner as any).partnerCode || "—"}</b> • Status: {partnerStatusLabel(selectedPartner)}
                   </div>
                   <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>
                     Email: {(selectedPartner as any).email || (selectedPartner as any).contactEmail || "—"} • Phone:{" "}
@@ -891,7 +1045,6 @@ export default function InsurancePage() {
 
         {/* Right column */}
         <div style={{ display: "grid", gap: 16 }}>
-          {/* ✅ FIX 3: Grouping in 3 different rows with 3 different colors */}
           <div style={{ display: "grid", gap: 12 }}>
             <CodeRow
               title={`ACTIVE Codes (${groupedCodes.active.length})`}
@@ -938,7 +1091,6 @@ export default function InsurancePage() {
             />
           </div>
 
-          {/* Statement items */}
           <div style={{ border: "1px solid #e5e7eb", borderRadius: 14, background: "white", overflow: "hidden" }}>
             <div style={{ padding: 14, borderBottom: "1px solid #e5e7eb", fontWeight: 900 }}>
               Statement Items {invoice ? `(${invoice.items.length})` : ""}
@@ -961,9 +1113,7 @@ export default function InsurancePage() {
 
                     <div style={{ fontSize: 12, marginTop: 6 }}>
                       <b>Provider:</b> {it.provider?.name || "-"}{" "}
-                      {it.provider?.providerId ? (
-                        <span style={{ opacity: 0.7 }}>• {it.provider.providerId}</span>
-                      ) : null}
+                      {it.provider?.providerId ? <span style={{ opacity: 0.7 }}>• {it.provider.providerId}</span> : null}
                     </div>
 
                     <div style={{ fontSize: 12, marginTop: 6 }}>
@@ -991,7 +1141,6 @@ export default function InsurancePage() {
             )}
           </div>
 
-          {/* Providers owed */}
           <div style={{ border: "1px solid #e5e7eb", borderRadius: 14, background: "white", overflow: "hidden" }}>
             <div style={{ padding: 14, borderBottom: "1px solid #e5e7eb", fontWeight: 900 }}>
               Providers Owed (from statement)
@@ -1103,11 +1252,7 @@ export default function InsurancePage() {
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12 }}>
                 <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 6 }}>Enabled</div>
                 <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                  <input
-                    type="checkbox"
-                    checked={editIsActive}
-                    onChange={(e) => setEditIsActive(e.target.checked)}
-                  />
+                  <input type="checkbox" checked={editIsActive} onChange={(e) => setEditIsActive(e.target.checked)} />
                   <span style={{ fontWeight: 800 }}>{editIsActive ? "Enabled" : "Disabled"}</span>
                 </label>
               </div>
@@ -1115,11 +1260,7 @@ export default function InsurancePage() {
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12 }}>
                 <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 6 }}>Archived</div>
                 <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                  <input
-                    type="checkbox"
-                    checked={editIsArchived}
-                    onChange={(e) => setEditIsArchived(e.target.checked)}
-                  />
+                  <input type="checkbox" checked={editIsArchived} onChange={(e) => setEditIsArchived(e.target.checked)} />
                   <span style={{ fontWeight: 800 }}>{editIsArchived ? "Archived" : "Not archived"}</span>
                 </label>
               </div>
@@ -1223,6 +1364,12 @@ export default function InsurancePage() {
             </div>
           </div>
         </Modal>
+      ) : null}
+
+      {loading ? (
+        <div style={{ marginTop: 16, opacity: 0.7, fontSize: 13 }}>
+          Loading...
+        </div>
       ) : null}
     </div>
   );
@@ -1391,12 +1538,7 @@ function CodeRow({
                 </div>
 
                 {!revoked ? (
-                  <button
-                    onClick={() => onRevoke(id)}
-                    disabled={saving}
-                    style={dangerBtnInline}
-                    title="Revoke/disable this code"
-                  >
+                  <button onClick={() => onRevoke(id)} disabled={saving} style={dangerBtnInline} title="Revoke/disable this code">
                     Revoke
                   </button>
                 ) : (
