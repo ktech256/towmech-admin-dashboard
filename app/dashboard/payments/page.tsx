@@ -121,11 +121,13 @@ function fmtDateTime(iso?: string) {
   return d.toLocaleString();
 }
 
-function fmtDateOnly(iso?: string) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString();
+function fmtRefundedBy(p: Payment) {
+  const name = p.refundedBy?.name?.trim();
+  const email = p.refundedBy?.email?.trim();
+  if (name && email) return `${name} (${email})`;
+  if (name) return name;
+  if (email) return email;
+  return "—";
 }
 
 export default function PaymentsPage() {
@@ -432,9 +434,9 @@ export default function PaymentsPage() {
                         <TableHead>Amount</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Provider</TableHead>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Paid</TableHead>
-                        <TableHead>Refund</TableHead>
+                        <TableHead>Paid At</TableHead>
+                        <TableHead>Refunded At</TableHead>
+                        <TableHead>Refunded By</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -468,25 +470,16 @@ export default function PaymentsPage() {
 
                             <TableCell>{p.provider || "—"}</TableCell>
 
-                            <TableCell>{fmtDateOnly(p.createdAt)}</TableCell>
-
                             <TableCell className="text-xs">
                               {fmtDateTime(p.paidAt)}
                             </TableCell>
 
                             <TableCell className="text-xs">
-                              {p.status === "REFUNDED" ? (
-                                <div className="flex flex-col gap-1">
-                                  <Badge className="bg-slate-700 w-fit">
-                                    REFUNDED
-                                  </Badge>
-                                  <span>{fmtDateTime(p.refundedAt)}</span>
-                                </div>
-                              ) : (
-                                <span className="text-muted-foreground">
-                                  {fmtDateTime(p.refundedAt)}
-                                </span>
-                              )}
+                              {fmtDateTime(p.refundedAt)}
+                            </TableCell>
+
+                            <TableCell className="text-xs">
+                              {fmtRefundedBy(p)}
                             </TableCell>
 
                             <TableCell className="text-right space-x-2">
