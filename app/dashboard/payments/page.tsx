@@ -106,10 +106,26 @@ function fmtMoney(n: number, currency: string) {
 
 function getStatusBadge(status: string) {
   if (status === "PAID") return <Badge className="bg-green-600">PAID</Badge>;
-  if (status === "PENDING") return <Badge className="bg-yellow-600">PENDING</Badge>;
+  if (status === "PENDING")
+    return <Badge className="bg-yellow-600">PENDING</Badge>;
   if (status === "FAILED") return <Badge className="bg-red-600">FAILED</Badge>;
-  if (status === "REFUNDED") return <Badge className="bg-slate-700">REFUNDED</Badge>;
+  if (status === "REFUNDED")
+    return <Badge className="bg-slate-700">REFUNDED</Badge>;
   return <Badge variant="secondary">{status}</Badge>;
+}
+
+function fmtDateTime(iso?: string) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString();
+}
+
+function fmtDateOnly(iso?: string) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString();
 }
 
 export default function PaymentsPage() {
@@ -211,7 +227,9 @@ export default function PaymentsPage() {
   }, [payments]);
 
   async function handleRefund(paymentId: string) {
-    const ok = window.confirm("Are you sure you want to mark this payment as refunded?");
+    const ok = window.confirm(
+      "Are you sure you want to mark this payment as refunded?"
+    );
     if (!ok) return;
 
     setActionLoadingId(paymentId);
@@ -232,7 +250,9 @@ export default function PaymentsPage() {
       return;
     }
 
-    const ok = window.confirm("Are you sure you want to manually mark this payment as PAID?");
+    const ok = window.confirm(
+      "Are you sure you want to manually mark this payment as PAID?"
+    );
     if (!ok) return;
 
     setActionLoadingId(paymentId || jobId);
@@ -319,7 +339,9 @@ export default function PaymentsPage() {
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm text-muted-foreground">Total Payments</CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">
+              Total Payments
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold">{totals.totalCount}</div>
@@ -328,7 +350,9 @@ export default function PaymentsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm text-muted-foreground">Total Paid</CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">
+              Total Paid
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold">
@@ -339,7 +363,9 @@ export default function PaymentsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm text-muted-foreground">Pending</CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">
+              Pending
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold">{totals.pending}</div>
@@ -348,7 +374,9 @@ export default function PaymentsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm text-muted-foreground">Refunded</CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">
+              Refunded
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold">{totals.refunded}</div>
@@ -372,7 +400,11 @@ export default function PaymentsPage() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
-                <Button variant="outline" onClick={loadPayments} disabled={loadingPayments}>
+                <Button
+                  variant="outline"
+                  onClick={loadPayments}
+                  disabled={loadingPayments}
+                >
                   Refresh
                 </Button>
               </div>
@@ -386,7 +418,9 @@ export default function PaymentsPage() {
               )}
 
               {errorPayments && (
-                <div className="py-10 text-center text-sm text-red-600">{errorPayments}</div>
+                <div className="py-10 text-center text-sm text-red-600">
+                  {errorPayments}
+                </div>
               )}
 
               {!loadingPayments && !errorPayments && (
@@ -399,6 +433,8 @@ export default function PaymentsPage() {
                         <TableHead>Status</TableHead>
                         <TableHead>Provider</TableHead>
                         <TableHead>Date</TableHead>
+                        <TableHead>Paid</TableHead>
+                        <TableHead>Refund</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -407,7 +443,7 @@ export default function PaymentsPage() {
                       {filtered.length === 0 ? (
                         <TableRow>
                           <TableCell
-                            colSpan={6}
+                            colSpan={8}
                             className="text-center py-8 text-sm text-muted-foreground"
                           >
                             No payments found ✅
@@ -424,19 +460,41 @@ export default function PaymentsPage() {
                             </TableCell>
 
                             <TableCell>
-                              {Number(p.amount || 0).toLocaleString()} {p.currency || currency}
+                              {Number(p.amount || 0).toLocaleString()}{" "}
+                              {p.currency || currency}
                             </TableCell>
 
                             <TableCell>{getStatusBadge(p.status)}</TableCell>
 
                             <TableCell>{p.provider || "—"}</TableCell>
 
-                            <TableCell>
-                              {p.createdAt ? new Date(p.createdAt).toLocaleDateString() : "—"}
+                            <TableCell>{fmtDateOnly(p.createdAt)}</TableCell>
+
+                            <TableCell className="text-xs">
+                              {fmtDateTime(p.paidAt)}
+                            </TableCell>
+
+                            <TableCell className="text-xs">
+                              {p.status === "REFUNDED" ? (
+                                <div className="flex flex-col gap-1">
+                                  <Badge className="bg-slate-700 w-fit">
+                                    REFUNDED
+                                  </Badge>
+                                  <span>{fmtDateTime(p.refundedAt)}</span>
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground">
+                                  {fmtDateTime(p.refundedAt)}
+                                </span>
+                              )}
                             </TableCell>
 
                             <TableCell className="text-right space-x-2">
-                              <Button size="sm" variant="outline" onClick={() => setSelected(p)}>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setSelected(p)}
+                              >
                                 View
                               </Button>
 
@@ -445,9 +503,13 @@ export default function PaymentsPage() {
                                 <Button
                                   size="sm"
                                   disabled={actionLoadingId === p._id}
-                                  onClick={() => handleMarkPaid(p.job?._id, p._id)}
+                                  onClick={() =>
+                                    handleMarkPaid(p.job?._id, p._id)
+                                  }
                                 >
-                                  {actionLoadingId === p._id ? "..." : "Mark Paid"}
+                                  {actionLoadingId === p._id
+                                    ? "..."
+                                    : "Mark Paid"}
                                 </Button>
                               )}
 
@@ -473,59 +535,56 @@ export default function PaymentsPage() {
             </CardContent>
           </Card>
 
-          {/* Payment Detail Modal */}
+          {/* Payment Detail Modal (Trip/Work Request details only) */}
           <Dialog open={!!selected} onOpenChange={() => setSelected(null)}>
             <DialogContent className="max-w-xl">
               <DialogHeader>
-                <DialogTitle>Payment Details</DialogTitle>
+                <DialogTitle>Work Request / Trip Details</DialogTitle>
               </DialogHeader>
 
               {selected && (
                 <div className="space-y-3 text-sm">
-                  <div>
-                    <strong>Status:</strong> {selected.status}
+                  <div className="grid gap-2 rounded-md border p-3">
+                    <div>
+                      <strong>Job ID:</strong> {selected.job?._id || "—"}
+                    </div>
+                    <div>
+                      <strong>Role Needed:</strong>{" "}
+                      {selected.job?.roleNeeded || "—"}
+                    </div>
+                    <div>
+                      <strong>Job Status:</strong> {selected.job?.status || "—"}
+                    </div>
                   </div>
 
-                  <div>
-                    <strong>Amount:</strong>{" "}
-                    {Number(selected.amount || 0).toLocaleString()} {selected.currency || currency}
+                  <div className="grid gap-2 rounded-md border p-3">
+                    <div>
+                      <strong>Customer:</strong> {selected.customer?.name || "—"}{" "}
+                      <span className="text-muted-foreground">
+                        ({selected.customer?.email || "—"})
+                      </span>
+                    </div>
+                    <div>
+                      <strong>Provider:</strong> {selected.provider || "—"}
+                    </div>
+                    <div>
+                      <strong>Provider Ref:</strong>{" "}
+                      {selected.providerReference || "—"}
+                    </div>
                   </div>
 
-                  <div>
-                    <strong>Customer:</strong> {selected.customer?.name || "—"} (
-                    {selected.customer?.email || "—"})
-                  </div>
-
-                  <div>
-                    <strong>Provider:</strong> {selected.provider || "—"}
-                  </div>
-
-                  <div>
-                    <strong>Reference:</strong> {selected.providerReference || "—"}
-                  </div>
-
-                  <div>
-                    <strong>Paid At:</strong>{" "}
-                    {selected.paidAt ? new Date(selected.paidAt).toLocaleString() : "—"}
-                  </div>
-
-                  <div>
-                    <strong>Manual Marked By:</strong>{" "}
-                    {selected.manualMarkedBy?.name
-                      ? `${selected.manualMarkedBy.name} (${selected.manualMarkedBy.email})`
-                      : "—"}
-                  </div>
-
-                  <div>
-                    <strong>Refunded By:</strong>{" "}
-                    {selected.refundedBy?.name
-                      ? `${selected.refundedBy.name} (${selected.refundedBy.email})`
-                      : "—"}
-                  </div>
-
-                  <div>
-                    <strong>Refunded At:</strong>{" "}
-                    {selected.refundedAt ? new Date(selected.refundedAt).toLocaleString() : "—"}
+                  <div className="grid gap-2 rounded-md border p-3">
+                    <div>
+                      <strong>Payment Status:</strong> {selected.status || "—"}
+                    </div>
+                    <div>
+                      <strong>Amount:</strong>{" "}
+                      {Number(selected.amount || 0).toLocaleString()}{" "}
+                      {selected.currency || currency}
+                    </div>
+                    <div>
+                      <strong>Created:</strong> {fmtDateTime(selected.createdAt)}
+                    </div>
                   </div>
                 </div>
               )}
@@ -557,16 +616,26 @@ export default function PaymentsPage() {
               <div className="grid gap-3 md:grid-cols-4">
                 <div>
                   <div className="mb-1 text-xs text-muted-foreground">From</div>
-                  <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+                  <Input
+                    type="date"
+                    value={fromDate}
+                    onChange={(e) => setFromDate(e.target.value)}
+                  />
                 </div>
 
                 <div>
                   <div className="mb-1 text-xs text-muted-foreground">To</div>
-                  <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+                  <Input
+                    type="date"
+                    value={toDate}
+                    onChange={(e) => setToDate(e.target.value)}
+                  />
                 </div>
 
                 <div>
-                  <div className="mb-1 text-xs text-muted-foreground">Provider/Driver ID (optional)</div>
+                  <div className="mb-1 text-xs text-muted-foreground">
+                    Provider/Driver ID (optional)
+                  </div>
                   <Input
                     value={providerId}
                     onChange={(e) => setProviderId(e.target.value)}
@@ -575,7 +644,10 @@ export default function PaymentsPage() {
                 </div>
 
                 <div className="flex items-end gap-2">
-                  <Button onClick={runProviderOwedCompute} disabled={loadingProviders}>
+                  <Button
+                    onClick={runProviderOwedCompute}
+                    disabled={loadingProviders}
+                  >
                     {loadingProviders ? "Computing..." : "Compute"}
                   </Button>
                   <Button
@@ -591,7 +663,9 @@ export default function PaymentsPage() {
               </div>
 
               {!providerResult ? (
-                <div className="text-sm text-muted-foreground">Run compute to see results.</div>
+                <div className="text-sm text-muted-foreground">
+                  Run compute to see results.
+                </div>
               ) : (
                 <div className="grid gap-4 md:grid-cols-2">
                   <Card>
@@ -603,7 +677,8 @@ export default function PaymentsPage() {
                     <CardContent className="space-y-3">
                       <div className="text-sm">
                         <b>Total due (all providers):</b>{" "}
-                        {Number(providerResult.totalDueAll || 0).toLocaleString()} {currency}
+                        {Number(providerResult.totalDueAll || 0).toLocaleString()}{" "}
+                        {currency}
                       </div>
 
                       <div className="max-h-[420px] overflow-auto rounded-md border">
@@ -613,14 +688,20 @@ export default function PaymentsPage() {
                           </div>
                         ) : (
                           providerResult.providers.map((p) => (
-                            <div key={p.providerId} className="border-b p-3 last:border-b-0">
+                            <div
+                              key={p.providerId}
+                              className="border-b p-3 last:border-b-0"
+                            >
                               <div className="text-sm font-semibold">
                                 {p.providerName || "Unknown Provider"}{" "}
-                                <span className="text-xs text-muted-foreground">• {p.providerId}</span>
+                                <span className="text-xs text-muted-foreground">
+                                  • {p.providerId}
+                                </span>
                               </div>
                               <div className="text-xs text-muted-foreground mt-1">
                                 Jobs: <b>{p.jobCount}</b> • Total due:{" "}
-                                <b>{Number(p.totalDue || 0).toLocaleString()}</b> {currency}
+                                <b>{Number(p.totalDue || 0).toLocaleString()}</b>{" "}
+                                {currency}
                               </div>
                             </div>
                           ))
@@ -643,20 +724,27 @@ export default function PaymentsPage() {
                           </div>
                         ) : (
                           providerResult.rows.map((r) => (
-                            <div key={r.jobId} className="border-b p-3 last:border-b-0">
+                            <div
+                              key={r.jobId}
+                              className="border-b p-3 last:border-b-0"
+                            >
                               <div className="flex items-center justify-between gap-2">
                                 <div className="text-sm font-semibold">
                                   Job {String(r.jobId).slice(-8).toUpperCase()}
                                 </div>
                                 <div className="text-xs text-muted-foreground">
-                                  {r.createdAt ? new Date(r.createdAt).toLocaleString() : ""}
+                                  {r.createdAt
+                                    ? new Date(r.createdAt).toLocaleString()
+                                    : ""}
                                 </div>
                               </div>
 
                               <div className="mt-2 text-xs">
                                 <b>Provider:</b> {r.providerName || "-"}{" "}
                                 {r.providerId ? (
-                                  <span className="text-muted-foreground">• {r.providerId}</span>
+                                  <span className="text-muted-foreground">
+                                    • {r.providerId}
+                                  </span>
                                 ) : null}
                               </div>
 
@@ -669,7 +757,8 @@ export default function PaymentsPage() {
 
                               <div className="mt-2 text-xs">
                                 <b>Provider due:</b>{" "}
-                                {Number(r.providerAmountDue || 0).toLocaleString()} {currency}
+                                {Number(r.providerAmountDue || 0).toLocaleString()}{" "}
+                                {currency}
                               </div>
                             </div>
                           ))
