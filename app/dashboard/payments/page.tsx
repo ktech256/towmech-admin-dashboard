@@ -51,6 +51,9 @@ type Payment = {
   paidAt?: string;
   refundedAt?: string;
 
+  // ✅ NEW in backend model
+  refundReason?: string | null;
+
   customer?: {
     name?: string;
     email?: string;
@@ -60,6 +63,13 @@ type Payment = {
     _id?: string;
     roleNeeded?: string;
     status?: string;
+
+    // ✅ insurance flag (used to hide refund)
+    insurance?: {
+      enabled?: boolean;
+      code?: string;
+      partnerId?: string;
+    };
   };
 
   manualMarkedBy?: {
@@ -106,11 +116,9 @@ function fmtMoney(n: number, currency: string) {
 
 function getStatusBadge(status: string) {
   if (status === "PAID") return <Badge className="bg-green-600">PAID</Badge>;
-  if (status === "PENDING")
-    return <Badge className="bg-yellow-600">PENDING</Badge>;
+  if (status === "PENDING") return <Badge className="bg-yellow-600">PENDING</Badge>;
   if (status === "FAILED") return <Badge className="bg-red-600">FAILED</Badge>;
-  if (status === "REFUNDED")
-    return <Badge className="bg-slate-700">REFUNDED</Badge>;
+  if (status === "REFUNDED") return <Badge className="bg-slate-700">REFUNDED</Badge>;
   return <Badge variant="secondary">{status}</Badge>;
 }
 
@@ -130,11 +138,15 @@ function fmtRefundedBy(p: Payment) {
   return "—";
 }
 
+function isInsurancePayment(p: Payment) {
+  return !!p?.job?.insurance?.enabled;
+}
+
 export default function PaymentsPage() {
   // Toggle: Customer payments vs Provider owed
   const [view, setView] = useState<"CUSTOMERS" | "PROVIDERS">("CUSTOMERS");
 
-  // Countries (optional, works with your workspace selector too)
+  // Countries
   const [countries, setCountries] = useState<Country[]>([]);
   const [selectedCountryCode, setSelectedCountryCode] = useState<string>("");
 
@@ -143,7 +155,7 @@ export default function PaymentsPage() {
     return c?.currency || "ZAR";
   }, [countries, selectedCountryCode]);
 
-  // Customer Payments (old UI)
+  // Customer payments
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loadingPayments, setLoadingPayments] = useState(true);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
@@ -151,7 +163,12 @@ export default function PaymentsPage() {
   const [errorPayments, setErrorPayments] = useState<string | null>(null);
   const [selected, setSelected] = useState<Payment | null>(null);
 
-  // Provider owed (new logic but displayed cleaner)
+  // ✅ Refund modal state
+  const [refundOpen, setRefundOpen] = useState(false);
+  const [refundTarget, setRefundTarget] = useState<Payment | null>(null);
+  const [refundReason, setRefundReason] = useState("");
+
+  // Provider owed
   const [fromDate, setFromDate] = useState<string>(todayYmd());
   const [toDate, setToDate] = useState<string>(todayYmd());
   const [providerId, setProviderId] = useState<string>("");
@@ -192,13 +209,12 @@ export default function PaymentsPage() {
 
   useEffect(() => {
     loadCountries().catch(() => {
-      // ignore; page still works without countries
+      // ignore
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    // Load payments when country changes (or on first load)
     loadPayments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCountryCode]);
@@ -228,15 +244,34 @@ export default function PaymentsPage() {
     return { totalCount, totalPaid, pending, refunded };
   }, [payments]);
 
-  async function handleRefund(paymentId: string) {
-    const ok = window.confirm(
-      "Are you sure you want to mark this payment as refunded?"
-    );
-    if (!ok) return;
+  function openRefund(p: Payment) {
+    if (isInsurancePayment(p)) {
+      alert("Insurance payments cannot be refunded ❌");
+      return;
+    }
+    setRefundTarget(p);
+    setRefundReason("");
+    setRefundOpen(true);
+  }
 
-    setActionLoadingId(paymentId);
+  async function confirmRefund() {
+    if (!refundTarget) return;
+
+    const reason = refundReason.trim();
+    if (!reason) {
+      alert("Refund reason is required ❌");
+      return;
+    }
+
+    setActionLoadingId(refundTarget._id);
     try {
-      await refundPayment(paymentId, selectedCountryCode || undefined);
+      // ✅ Aligns to backend: PATCH /:id/refund expects body { reason }
+      await refundPayment(refundTarget._id, selectedCountryCode || undefined, { reason });
+
+      setRefundOpen(false);
+      setRefundTarget(null);
+      setRefundReason("");
+
       await loadPayments();
       alert("Payment refunded ✅");
     } catch (e: any) {
@@ -252,9 +287,7 @@ export default function PaymentsPage() {
       return;
     }
 
-    const ok = window.confirm(
-      "Are you sure you want to manually mark this payment as PAID?"
-    );
+    const ok = window.confirm("Are you sure you want to manually mark this payment as PAID?");
     if (!ok) return;
 
     setActionLoadingId(paymentId || jobId);
@@ -318,7 +351,6 @@ export default function PaymentsPage() {
           Provider Owed (Money OUT)
         </Button>
 
-        {/* Optional country selector - if countries load */}
         {countries.length > 0 ? (
           <div className="ml-auto flex items-center gap-2">
             <span className="text-sm text-muted-foreground">Country</span>
@@ -337,13 +369,11 @@ export default function PaymentsPage() {
         ) : null}
       </div>
 
-      {/* ✅ Top Overview MUST stay (old page) */}
+      {/* Top stats */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm text-muted-foreground">
-              Total Payments
-            </CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">Total Payments</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold">{totals.totalCount}</div>
@@ -352,22 +382,16 @@ export default function PaymentsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm text-muted-foreground">
-              Total Paid
-            </CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">Total Paid</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-semibold">
-              {fmtMoney(totals.totalPaid, currency)}
-            </div>
+            <div className="text-2xl font-semibold">{fmtMoney(totals.totalPaid, currency)}</div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm text-muted-foreground">
-              Pending
-            </CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">Pending</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold">{totals.pending}</div>
@@ -376,9 +400,7 @@ export default function PaymentsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm text-muted-foreground">
-              Refunded
-            </CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">Refunded</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold">{totals.refunded}</div>
@@ -386,9 +408,7 @@ export default function PaymentsPage() {
         </Card>
       </div>
 
-      {/* =========================
-          CUSTOMER PAYMENTS (OLD UI)
-         ========================= */}
+      {/* CUSTOMER PAYMENTS */}
       {view === "CUSTOMERS" ? (
         <>
           <Card>
@@ -402,11 +422,7 @@ export default function PaymentsPage() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
-                <Button
-                  variant="outline"
-                  onClick={loadPayments}
-                  disabled={loadingPayments}
-                >
+                <Button variant="outline" onClick={loadPayments} disabled={loadingPayments}>
                   Refresh
                 </Button>
               </div>
@@ -414,15 +430,11 @@ export default function PaymentsPage() {
 
             <CardContent>
               {loadingPayments && (
-                <div className="py-10 text-center text-sm text-muted-foreground">
-                  Loading payments...
-                </div>
+                <div className="py-10 text-center text-sm text-muted-foreground">Loading payments...</div>
               )}
 
               {errorPayments && (
-                <div className="py-10 text-center text-sm text-red-600">
-                  {errorPayments}
-                </div>
+                <div className="py-10 text-center text-sm text-red-600">{errorPayments}</div>
               )}
 
               {!loadingPayments && !errorPayments && (
@@ -444,82 +456,75 @@ export default function PaymentsPage() {
                     <TableBody>
                       {filtered.length === 0 ? (
                         <TableRow>
-                          <TableCell
-                            colSpan={8}
-                            className="text-center py-8 text-sm text-muted-foreground"
-                          >
+                          <TableCell colSpan={8} className="text-center py-8 text-sm text-muted-foreground">
                             No payments found ✅
                           </TableCell>
                         </TableRow>
                       ) : (
-                        filtered.map((p) => (
-                          <TableRow key={p._id}>
-                            <TableCell className="font-medium">
-                              {p.customer?.name || "—"}
-                              <div className="text-xs text-muted-foreground">
-                                {p.customer?.email || ""}
-                              </div>
-                            </TableCell>
+                        filtered.map((p) => {
+                          const busy = actionLoadingId === p._id;
+                          const insurance = isInsurancePayment(p);
 
-                            <TableCell>
-                              {Number(p.amount || 0).toLocaleString()}{" "}
-                              {p.currency || currency}
-                            </TableCell>
+                          return (
+                            <TableRow key={p._id}>
+                              <TableCell className="font-medium">
+                                {p.customer?.name || "—"}
+                                <div className="text-xs text-muted-foreground">{p.customer?.email || ""}</div>
+                              </TableCell>
 
-                            <TableCell>{getStatusBadge(p.status)}</TableCell>
+                              <TableCell>
+                                {Number(p.amount || 0).toLocaleString()} {p.currency || currency}
+                              </TableCell>
 
-                            <TableCell>{p.provider || "—"}</TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  {getStatusBadge(p.status)}
+                                  {insurance ? (
+                                    <Badge variant="secondary" className="border">
+                                      INSURANCE
+                                    </Badge>
+                                  ) : null}
+                                </div>
+                              </TableCell>
 
-                            <TableCell className="text-xs">
-                              {fmtDateTime(p.paidAt)}
-                            </TableCell>
+                              <TableCell>{p.provider || "—"}</TableCell>
 
-                            <TableCell className="text-xs">
-                              {fmtDateTime(p.refundedAt)}
-                            </TableCell>
+                              <TableCell className="text-xs">{fmtDateTime(p.paidAt)}</TableCell>
 
-                            <TableCell className="text-xs">
-                              {fmtRefundedBy(p)}
-                            </TableCell>
+                              <TableCell className="text-xs">{fmtDateTime(p.refundedAt)}</TableCell>
 
-                            <TableCell className="text-right space-x-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setSelected(p)}
-                              >
-                                View
-                              </Button>
+                              <TableCell className="text-xs">{fmtRefundedBy(p)}</TableCell>
 
-                              {/* Mark Paid (PENDING only) */}
-                              {p.status === "PENDING" && (
-                                <Button
-                                  size="sm"
-                                  disabled={actionLoadingId === p._id}
-                                  onClick={() =>
-                                    handleMarkPaid(p.job?._id, p._id)
-                                  }
-                                >
-                                  {actionLoadingId === p._id
-                                    ? "..."
-                                    : "Mark Paid"}
+                              <TableCell className="text-right space-x-2">
+                                <Button size="sm" variant="outline" onClick={() => setSelected(p)}>
+                                  View
                                 </Button>
-                              )}
 
-                              {/* Refund (PAID only) */}
-                              {p.status === "PAID" && (
-                                <Button
-                                  size="sm"
-                                  variant="destructive"
-                                  disabled={actionLoadingId === p._id}
-                                  onClick={() => handleRefund(p._id)}
-                                >
-                                  {actionLoadingId === p._id ? "..." : "Refund"}
-                                </Button>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        ))
+                                {p.status === "PENDING" && (
+                                  <Button
+                                    size="sm"
+                                    disabled={busy}
+                                    onClick={() => handleMarkPaid(p.job?._id, p._id)}
+                                  >
+                                    {busy ? "..." : "Mark Paid"}
+                                  </Button>
+                                )}
+
+                                {/* ✅ Refund only for PAID + not insurance */}
+                                {p.status === "PAID" && !insurance && (
+                                  <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    disabled={busy}
+                                    onClick={() => openRefund(p)}
+                                  >
+                                    {busy ? "..." : "Refund"}
+                                  </Button>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
                       )}
                     </TableBody>
                   </Table>
@@ -528,7 +533,7 @@ export default function PaymentsPage() {
             </CardContent>
           </Card>
 
-          {/* Payment Detail Modal (Trip/Work Request details only) */}
+          {/* View modal */}
           <Dialog open={!!selected} onOpenChange={() => setSelected(null)}>
             <DialogContent className="max-w-xl">
               <DialogHeader>
@@ -542,27 +547,29 @@ export default function PaymentsPage() {
                       <strong>Job ID:</strong> {selected.job?._id || "—"}
                     </div>
                     <div>
-                      <strong>Role Needed:</strong>{" "}
-                      {selected.job?.roleNeeded || "—"}
+                      <strong>Role Needed:</strong> {selected.job?.roleNeeded || "—"}
                     </div>
                     <div>
                       <strong>Job Status:</strong> {selected.job?.status || "—"}
                     </div>
+
+                    {selected.job?.insurance?.enabled ? (
+                      <div className="pt-2 text-xs text-muted-foreground">
+                        <b>Insurance:</b> Enabled {selected.job?.insurance?.code ? `• Code: ${selected.job.insurance.code}` : ""}
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="grid gap-2 rounded-md border p-3">
                     <div>
                       <strong>Customer:</strong> {selected.customer?.name || "—"}{" "}
-                      <span className="text-muted-foreground">
-                        ({selected.customer?.email || "—"})
-                      </span>
+                      <span className="text-muted-foreground">({selected.customer?.email || "—"})</span>
                     </div>
                     <div>
                       <strong>Provider:</strong> {selected.provider || "—"}
                     </div>
                     <div>
-                      <strong>Provider Ref:</strong>{" "}
-                      {selected.providerReference || "—"}
+                      <strong>Provider Ref:</strong> {selected.providerReference || "—"}
                     </div>
                   </div>
 
@@ -571,24 +578,99 @@ export default function PaymentsPage() {
                       <strong>Payment Status:</strong> {selected.status || "—"}
                     </div>
                     <div>
-                      <strong>Amount:</strong>{" "}
-                      {Number(selected.amount || 0).toLocaleString()}{" "}
+                      <strong>Amount:</strong> {Number(selected.amount || 0).toLocaleString()}{" "}
                       {selected.currency || currency}
                     </div>
                     <div>
                       <strong>Created:</strong> {fmtDateTime(selected.createdAt)}
+                    </div>
+
+                    <div>
+                      <strong>Paid At:</strong> {fmtDateTime(selected.paidAt)}
+                    </div>
+
+                    <div>
+                      <strong>Refunded At:</strong> {fmtDateTime(selected.refundedAt)}
+                    </div>
+
+                    <div>
+                      <strong>Refunded By:</strong> {fmtRefundedBy(selected)}
+                    </div>
+
+                    {/* ✅ NEW: refund reason */}
+                    <div>
+                      <strong>Refund Reason:</strong> {selected.refundReason?.trim() ? selected.refundReason : "—"}
                     </div>
                   </div>
                 </div>
               )}
             </DialogContent>
           </Dialog>
+
+          {/* Refund modal */}
+          <Dialog
+            open={refundOpen}
+            onOpenChange={(v) => {
+              setRefundOpen(v);
+              if (!v) {
+                setRefundTarget(null);
+                setRefundReason("");
+              }
+            }}
+          >
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Refund Payment</DialogTitle>
+              </DialogHeader>
+
+              <div className="space-y-3 text-sm">
+                <div className="rounded-md border p-3">
+                  <div className="font-semibold">
+                    {refundTarget?.customer?.name || "Customer"} • {Number(refundTarget?.amount || 0).toLocaleString()}{" "}
+                    {refundTarget?.currency || currency}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Payment ID: {refundTarget?._id || "—"}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-xs text-muted-foreground">Refund reason (required)</div>
+                  <Input
+                    value={refundReason}
+                    onChange={(e) => setRefundReason(e.target.value)}
+                    placeholder="Example: Customer cancelled, duplicate charge, etc."
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setRefundOpen(false);
+                      setRefundTarget(null);
+                      setRefundReason("");
+                    }}
+                    disabled={actionLoadingId === refundTarget?._id}
+                  >
+                    Cancel
+                  </Button>
+
+                  <Button
+                    variant="destructive"
+                    onClick={confirmRefund}
+                    disabled={actionLoadingId === refundTarget?._id}
+                  >
+                    {actionLoadingId === refundTarget?._id ? "Refunding..." : "Confirm Refund"}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         </>
       ) : null}
 
-      {/* =========================
-          PROVIDER OWED (CLEANER VIEW)
-         ========================= */}
+      {/* PROVIDER OWED */}
       {view === "PROVIDERS" ? (
         <>
           <Card>
@@ -609,26 +691,16 @@ export default function PaymentsPage() {
               <div className="grid gap-3 md:grid-cols-4">
                 <div>
                   <div className="mb-1 text-xs text-muted-foreground">From</div>
-                  <Input
-                    type="date"
-                    value={fromDate}
-                    onChange={(e) => setFromDate(e.target.value)}
-                  />
+                  <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
                 </div>
 
                 <div>
                   <div className="mb-1 text-xs text-muted-foreground">To</div>
-                  <Input
-                    type="date"
-                    value={toDate}
-                    onChange={(e) => setToDate(e.target.value)}
-                  />
+                  <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
                 </div>
 
                 <div>
-                  <div className="mb-1 text-xs text-muted-foreground">
-                    Provider/Driver ID (optional)
-                  </div>
+                  <div className="mb-1 text-xs text-muted-foreground">Provider/Driver ID (optional)</div>
                   <Input
                     value={providerId}
                     onChange={(e) => setProviderId(e.target.value)}
@@ -637,10 +709,7 @@ export default function PaymentsPage() {
                 </div>
 
                 <div className="flex items-end gap-2">
-                  <Button
-                    onClick={runProviderOwedCompute}
-                    disabled={loadingProviders}
-                  >
+                  <Button onClick={runProviderOwedCompute} disabled={loadingProviders}>
                     {loadingProviders ? "Computing..." : "Compute"}
                   </Button>
                   <Button
@@ -656,9 +725,7 @@ export default function PaymentsPage() {
               </div>
 
               {!providerResult ? (
-                <div className="text-sm text-muted-foreground">
-                  Run compute to see results.
-                </div>
+                <div className="text-sm text-muted-foreground">Run compute to see results.</div>
               ) : (
                 <div className="grid gap-4 md:grid-cols-2">
                   <Card>
@@ -669,32 +736,23 @@ export default function PaymentsPage() {
                     </CardHeader>
                     <CardContent className="space-y-3">
                       <div className="text-sm">
-                        <b>Total due (all providers):</b>{" "}
-                        {Number(providerResult.totalDueAll || 0).toLocaleString()}{" "}
+                        <b>Total due (all providers):</b> {Number(providerResult.totalDueAll || 0).toLocaleString()}{" "}
                         {currency}
                       </div>
 
                       <div className="max-h-[420px] overflow-auto rounded-md border">
                         {providerResult.providers.length === 0 ? (
-                          <div className="p-4 text-sm text-muted-foreground">
-                            No providers found for this filter.
-                          </div>
+                          <div className="p-4 text-sm text-muted-foreground">No providers found for this filter.</div>
                         ) : (
                           providerResult.providers.map((p) => (
-                            <div
-                              key={p.providerId}
-                              className="border-b p-3 last:border-b-0"
-                            >
+                            <div key={p.providerId} className="border-b p-3 last:border-b-0">
                               <div className="text-sm font-semibold">
                                 {p.providerName || "Unknown Provider"}{" "}
-                                <span className="text-xs text-muted-foreground">
-                                  • {p.providerId}
-                                </span>
+                                <span className="text-xs text-muted-foreground">• {p.providerId}</span>
                               </div>
                               <div className="text-xs text-muted-foreground mt-1">
                                 Jobs: <b>{p.jobCount}</b> • Total due:{" "}
-                                <b>{Number(p.totalDue || 0).toLocaleString()}</b>{" "}
-                                {currency}
+                                <b>{Number(p.totalDue || 0).toLocaleString()}</b> {currency}
                               </div>
                             </div>
                           ))
@@ -712,33 +770,22 @@ export default function PaymentsPage() {
                     <CardContent>
                       <div className="max-h-[520px] overflow-auto rounded-md border">
                         {providerResult.rows.length === 0 ? (
-                          <div className="p-4 text-sm text-muted-foreground">
-                            No jobs found for this filter.
-                          </div>
+                          <div className="p-4 text-sm text-muted-foreground">No jobs found for this filter.</div>
                         ) : (
                           providerResult.rows.map((r) => (
-                            <div
-                              key={r.jobId}
-                              className="border-b p-3 last:border-b-0"
-                            >
+                            <div key={r.jobId} className="border-b p-3 last:border-b-0">
                               <div className="flex items-center justify-between gap-2">
                                 <div className="text-sm font-semibold">
                                   Job {String(r.jobId).slice(-8).toUpperCase()}
                                 </div>
                                 <div className="text-xs text-muted-foreground">
-                                  {r.createdAt
-                                    ? new Date(r.createdAt).toLocaleString()
-                                    : ""}
+                                  {r.createdAt ? new Date(r.createdAt).toLocaleString() : ""}
                                 </div>
                               </div>
 
                               <div className="mt-2 text-xs">
                                 <b>Provider:</b> {r.providerName || "-"}{" "}
-                                {r.providerId ? (
-                                  <span className="text-muted-foreground">
-                                    • {r.providerId}
-                                  </span>
-                                ) : null}
+                                {r.providerId ? <span className="text-muted-foreground">• {r.providerId}</span> : null}
                               </div>
 
                               <div className="mt-1 text-xs">
@@ -749,9 +796,7 @@ export default function PaymentsPage() {
                               </div>
 
                               <div className="mt-2 text-xs">
-                                <b>Provider due:</b>{" "}
-                                {Number(r.providerAmountDue || 0).toLocaleString()}{" "}
-                                {currency}
+                                <b>Provider due:</b> {Number(r.providerAmountDue || 0).toLocaleString()} {currency}
                               </div>
                             </div>
                           ))
