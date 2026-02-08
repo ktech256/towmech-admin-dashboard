@@ -41,7 +41,7 @@ type AdminUser = {
   email: string;
   role: string;
 
-  // ✅ Added phone field (so we can show only phone column)
+  // ✅ Added (so table can show it)
   phone?: string;
 
   permissions?: Record<string, boolean>;
@@ -93,6 +93,11 @@ const PERMISSION_KEYS = [
   { key: "canManageInsurance", label: "Manage Insurance" },
 ];
 
+function fmtPhone(v?: string) {
+  const s = String(v ?? "").trim();
+  return s ? s : "—";
+}
+
 export default function RolesPage() {
   const [tab, setTab] = useState<"admins" | "create">("admins");
 
@@ -108,7 +113,7 @@ export default function RolesPage() {
   );
   const [savingPermissions, setSavingPermissions] = useState(false);
 
-  // ✅ Create Admin Form (still keeps name/email/phone/password for creating new admin)
+  // ✅ Create Admin Form
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -138,8 +143,24 @@ export default function RolesPage() {
   const filteredAdmins = useMemo(() => {
     if (!search) return admins;
     const s = search.toLowerCase();
-    return admins.filter((a) => (a.phone || "").toLowerCase().includes(s));
+    return admins.filter(
+      (a) =>
+        a.name.toLowerCase().includes(s) ||
+        a.email.toLowerCase().includes(s) ||
+        a.role.toLowerCase().includes(s) ||
+        (a.phone || "").toLowerCase().includes(s)
+    );
   }, [admins, search]);
+
+  const getStatusBadge = (a: AdminUser) => {
+    if (a.accountStatus?.isArchived)
+      return <Badge className="bg-slate-700">ARCHIVED</Badge>;
+    if (a.accountStatus?.isBanned)
+      return <Badge className="bg-red-600">BANNED</Badge>;
+    if (a.accountStatus?.isSuspended)
+      return <Badge className="bg-orange-600">SUSPENDED</Badge>;
+    return <Badge className="bg-green-600">ACTIVE</Badge>;
+  };
 
   const openPermissionModal = (admin: AdminUser) => {
     setSelectedAdmin(admin);
@@ -252,14 +273,14 @@ export default function RolesPage() {
         </Button>
       </div>
 
-      {/* ✅ TAB 1 — Admin Users (ONLY ONE COLUMN: PHONE) */}
+      {/* ✅ TAB 1 — Admin Users */}
       {tab === "admins" && (
         <Card>
           <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <CardTitle className="text-base">Admin Phone Numbers</CardTitle>
+            <CardTitle className="text-base">Admin Accounts</CardTitle>
             <Input
               className="max-w-sm"
-              placeholder="Search phone number..."
+              placeholder="Search admin name, email, phone..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -275,22 +296,99 @@ export default function RolesPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Email</TableHead>
+
+                      {/* ✅ ADDED column (without removing anything else) */}
                       <TableHead>Phone</TableHead>
+
+                      <TableHead>Role</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Permissions</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
 
                   <TableBody>
                     {filteredAdmins.length === 0 ? (
                       <TableRow>
-                        <TableCell className="text-center py-8 text-sm text-muted-foreground">
-                          No admin phone numbers found ✅
+                        <TableCell
+                          colSpan={7}
+                          className="text-center py-8 text-sm text-muted-foreground"
+                        >
+                          No admin users found ✅
                         </TableCell>
                       </TableRow>
                     ) : (
                       filteredAdmins.map((a) => (
                         <TableRow key={a._id}>
-                          <TableCell className="font-medium">
-                            {a.phone || "—"}
+                          <TableCell className="font-medium">{a.name}</TableCell>
+                          <TableCell>{a.email}</TableCell>
+
+                          {/* ✅ ADDED cell */}
+                          <TableCell>{fmtPhone(a.phone)}</TableCell>
+
+                          <TableCell>
+                            <Badge variant="secondary">{a.role}</Badge>
+                          </TableCell>
+                          <TableCell>{getStatusBadge(a)}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {
+                              Object.keys(a.permissions || {}).filter(
+                                (k) => a.permissions?.[k]
+                              ).length
+                            }{" "}
+                            enabled
+                          </TableCell>
+
+                          <TableCell className="text-right space-x-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openPermissionModal(a)}
+                            >
+                              Permissions
+                            </Button>
+
+                            {!a.accountStatus?.isSuspended ? (
+                              <Button size="sm" onClick={() => suspendUser(a._id)}>
+                                Suspend
+                              </Button>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => unsuspendUser(a._id)}
+                              >
+                                Unsuspend
+                              </Button>
+                            )}
+
+                            {!a.accountStatus?.isBanned ? (
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => banUser(a._id)}
+                              >
+                                Ban
+                              </Button>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => unbanUser(a._id)}
+                              >
+                                Unban
+                              </Button>
+                            )}
+
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleArchive(a._id)}
+                            >
+                              Archive
+                            </Button>
                           </TableCell>
                         </TableRow>
                       ))
@@ -303,7 +401,7 @@ export default function RolesPage() {
         </Card>
       )}
 
-      {/* ✅ TAB 2 — Create Admin (unchanged) */}
+      {/* ✅ TAB 2 — Create Admin */}
       {tab === "create" && (
         <Card>
           <CardHeader>
@@ -351,11 +449,7 @@ export default function RolesPage() {
                     type="checkbox"
                     checked={!!createPermissions[p.key]}
                     onChange={() =>
-                      togglePermission(
-                        p.key,
-                        setCreatePermissions,
-                        createPermissions
-                      )
+                      togglePermission(p.key, setCreatePermissions, createPermissions)
                     }
                   />
                   {p.label}
@@ -370,7 +464,7 @@ export default function RolesPage() {
         </Card>
       )}
 
-      {/* ✅ Permission Modal (kept intact; open via code if you still want to use it elsewhere) */}
+      {/* ✅ Permission Modal */}
       <Dialog open={!!selectedAdmin} onOpenChange={() => setSelectedAdmin(null)}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -393,11 +487,7 @@ export default function RolesPage() {
                       type="checkbox"
                       checked={!!permissionDraft[p.key]}
                       onChange={() =>
-                        togglePermission(
-                          p.key,
-                          setPermissionDraft,
-                          permissionDraft
-                        )
+                        togglePermission(p.key, setPermissionDraft, permissionDraft)
                       }
                     />
                     {p.label}
