@@ -90,97 +90,103 @@ function withApiPrefix(path: string) {
  * - Accepts display names typed by admins (Afrikaans, Kiswahili, isiZulu, etc.)
  * - Canonicalizes tags: pt_BR -> pt-BR, en-za -> en-ZA
  *
- * Matches the intent of:
- * - backend/src/models/Country.js normalizeLangTag
- * - controller normLangTag + normLangList
- * - Android screens: toLangTag(...) behavior
+ * IMPORTANT:
+ * We build the mapping from a list to avoid TS build errors from duplicate keys.
  */
-const LANGUAGE_NAME_TO_TAG: Record<string, string> = {
+const LANGUAGE_CHOICES: Array<[string, string]> = [
   // Core
-  english: "en",
-  afrikaans: "af",
-  arabic: "ar",
-  bengali: "bn",
-  bulgarian: "bg",
-  catalan: "ca",
-  "chinese (simplified)": "zh-Hans",
-  "chinese (traditional)": "zh-Hant",
-  chinese: "zh",
-  croatian: "hr",
-  czech: "cs",
-  danish: "da",
-  dutch: "nl",
-  estonian: "et",
-  finnish: "fi",
-  french: "fr",
-  german: "de",
-  greek: "el",
-  hebrew: "he",
-  hindi: "hi",
-  hungarian: "hu",
-  indonesian: "id",
-  italian: "it",
-  japanese: "ja",
-  korean: "ko",
-  latvian: "lv",
-  lithuanian: "lt",
-  malay: "ms",
-  norwegian: "no",
-  persian: "fa",
-  farsi: "fa",
-  polish: "pl",
-  portuguese: "pt",
-  "portuguese (brazil)": "pt-BR",
-  "brazilian portuguese": "pt-BR",
-  romanian: "ro",
-  russian: "ru",
-  serbian: "sr",
-  slovak: "sk",
-  slovenian: "sl",
-  spanish: "es",
-  swedish: "sv",
-  thai: "th",
-  turkish: "tr",
-  ukrainian: "uk",
-  urdu: "ur",
-  vietnamese: "vi",
+  ["English", "en"],
+  ["Afrikaans", "af"],
+  ["Arabic", "ar"],
+  ["Bengali", "bn"],
+  ["Bulgarian", "bg"],
+  ["Catalan", "ca"],
+  ["Chinese (Simplified)", "zh-Hans"],
+  ["Chinese (Traditional)", "zh-Hant"],
+  ["Chinese", "zh"],
+  ["Croatian", "hr"],
+  ["Czech", "cs"],
+  ["Danish", "da"],
+  ["Dutch", "nl"],
+  ["Estonian", "et"],
+  ["Finnish", "fi"],
+  ["French", "fr"],
+  ["German", "de"],
+  ["Greek", "el"],
+  ["Hebrew", "he"],
+  ["Hindi", "hi"],
+  ["Hungarian", "hu"],
+  ["Indonesian", "id"],
+  ["Italian", "it"],
+  ["Japanese", "ja"],
+  ["Korean", "ko"],
+  ["Latvian", "lv"],
+  ["Lithuanian", "lt"],
+  ["Malay", "ms"],
+  ["Norwegian", "no"],
+  ["Persian", "fa"],
+  ["Farsi", "fa"],
+  ["Polish", "pl"],
+  ["Portuguese", "pt"],
+  ["Portuguese (Brazil)", "pt-BR"],
+  ["Portuguese (Brasil)", "pt-BR"],
+  ["Portuguese (br)", "pt-BR"],
+  ["Portuguese (brasil)", "pt-BR"],
+  ["Portuguese (brazil)", "pt-BR"],
+  ["Brazilian Portuguese", "pt-BR"],
+  ["Romanian", "ro"],
+  ["Russian", "ru"],
+  ["Serbian", "sr"],
+  ["Slovak", "sk"],
+  ["Slovenian", "sl"],
+  ["Spanish", "es"],
+  ["Swedish", "sv"],
+  ["Thai", "th"],
+  ["Turkish", "tr"],
+  ["Ukrainian", "uk"],
+  ["Urdu", "ur"],
+  ["Vietnamese", "vi"],
 
   // Africa + SA focus
-  swahili: "sw",
-  kiswahili: "sw",
-  amharic: "am",
-  hausa: "ha",
-  igbo: "ig",
-  yoruba: "yo",
-  somali: "so",
-  shona: "sn",
-  chichewa: "ny",
-  kinyarwanda: "rw",
-  kirundi: "rn",
-  lingala: "ln",
-  luganda: "lg",
-  oromo: "om",
-  tigrinya: "ti",
-  isizulu: "zu",
-  isixhosa: "xh",
-  sesotho: "st",
-  "sesotho sa leboa": "nso",
-  setswana: "tn",
-  xitsonga: "ts",
-  tsonga: "ts",
-  siswati: "ss",
-  swati: "ss",
-  venda: "ve",
-  tshivenda: "ve",
-  ndebele: "nr",
+  ["Swahili", "sw"],
+  ["Kiswahili", "sw"],
+  ["Amharic", "am"],
+  ["Hausa", "ha"],
+  ["Igbo", "ig"],
+  ["Yoruba", "yo"],
+  ["Somali", "so"],
+  ["Shona", "sn"],
+  ["Chichewa", "ny"],
+  ["Kinyarwanda", "rw"],
+  ["Kirundi", "rn"],
+  ["Lingala", "ln"],
+  ["Luganda", "lg"],
+  ["Oromo", "om"],
+  ["Tigrinya", "ti"],
+  ["isiZulu", "zu"],
+  ["isiXhosa", "xh"],
+  ["Sesotho", "st"],
+  ["Sesotho sa Leboa", "nso"],
+  ["Setswana", "tn"],
+  ["Xitsonga", "ts"],
+  ["Tsonga", "ts"],
+  ["Siswati", "ss"],
+  ["Swati", "ss"],
+  ["Venda", "ve"],
+  ["Tshivenda", "ve"],
+  ["Ndebele", "nr"],
 
-  // Common aliases admins type
-  "portuguese (br)": "pt-BR",
-  "portuguese (brasil)": "pt-BR",
-  "portuguese (brazil)": "pt-BR",
-  "brazilian portuguese": "pt-BR",
-  mandarin: "zh",
-};
+  // Common aliases
+  ["Mandarin", "zh"],
+];
+
+const LANG_NAME_TO_TAG: Record<string, string> = (() => {
+  const out: Record<string, string> = {};
+  for (const [name, tag] of LANGUAGE_CHOICES) {
+    out[name.trim().toLowerCase()] = tag;
+  }
+  return out;
+})();
 
 function looksLikeLangTag(v: string) {
   return /^[A-Za-z]{2,3}([_-][A-Za-z]{4})?([_-][A-Za-z]{2}|\d{3})?([_-][A-Za-z0-9]{5,8})*$/.test(
@@ -193,7 +199,7 @@ function normalizeLangTag(input: any): string {
   if (!raw) return "en";
 
   // 1) mapping by name
-  const byName = LANGUAGE_NAME_TO_TAG[raw.toLowerCase()];
+  const byName = LANG_NAME_TO_TAG[raw.toLowerCase()];
   if (byName) return byName;
 
   // 2) tag-like → canonicalize
@@ -215,7 +221,7 @@ function normalizeLangTag(input: any): string {
     .replace(/\(.*?\)/g, "")
     .replace(/\s+/g, " ")
     .trim();
-  return LANGUAGE_NAME_TO_TAG[simplified] || "en";
+  return LANG_NAME_TO_TAG[simplified] || "en";
 }
 
 function normalizeLangListCSV(csv: any): string[] {
@@ -381,7 +387,6 @@ export default function CountriesPage() {
     }
 
     try {
-      // ✅ New backend route (if present)
       await api.post(withApiPrefix(`/admin/countries`), payload);
 
       setForm({
@@ -399,7 +404,6 @@ export default function CountriesPage() {
       await loadCountries();
       return;
     } catch (e1: any) {
-      // ✅ Backward compatibility fallback: PUT /api/admin/countries/:code (legacy controller)
       const status = e1?.response?.status;
       if ((status === 404 || status === 405) && code) {
         try {
@@ -424,7 +428,6 @@ export default function CountriesPage() {
     const nextActive = !country.isActive;
 
     try {
-      // ✅ New backend update route (by _id)
       if (country._id) {
         await api.patch(withApiPrefix(`/admin/countries/${country._id}`), { isActive: nextActive });
         setCountries((prev) =>
@@ -433,7 +436,6 @@ export default function CountriesPage() {
         return;
       }
 
-      // fallback (legacy)
       const code = normalizeIso2(country.code);
       await api.patch(withApiPrefix(`/admin/countries/${code}/status`), { isActive: nextActive });
       setCountries((prev) =>
@@ -526,7 +528,6 @@ export default function CountriesPage() {
       isActive: !!editForm.isActive,
     };
 
-    // keep legacy phoneRules in sync if dial is provided
     if (dial) {
       payload.phoneRules = {
         dialCode: dial,
@@ -669,9 +670,6 @@ export default function CountriesPage() {
                 border: "1px solid #d1d5db",
               }}
             />
-            <div style={{ fontSize: 11, opacity: 0.7, marginTop: 6 }}>
-              Saved as a <b>tag</b> (e.g. Afrikaans → af, pt_BR → pt-BR).
-            </div>
           </div>
 
           <div>
@@ -689,9 +687,6 @@ export default function CountriesPage() {
                 border: "1px solid #d1d5db",
               }}
             />
-            <div style={{ fontSize: 11, opacity: 0.7, marginTop: 6 }}>
-              Default language is automatically included in this list.
-            </div>
           </div>
 
           <div>
@@ -1017,9 +1012,6 @@ export default function CountriesPage() {
                     border: "1px solid #d1d5db",
                   }}
                 />
-                <div style={{ fontSize: 11, opacity: 0.7, marginTop: 6 }}>
-                  Saved as a <b>tag</b> (Afrikaans → af).
-                </div>
               </div>
 
               <div style={{ gridColumn: "1 / -1" }}>
@@ -1039,9 +1031,6 @@ export default function CountriesPage() {
                     border: "1px solid #d1d5db",
                   }}
                 />
-                <div style={{ fontSize: 11, opacity: 0.7, marginTop: 6 }}>
-                  Default language is automatically included in this list.
-                </div>
               </div>
 
               <div style={{ gridColumn: "1 / -1" }}>
