@@ -85,161 +85,105 @@ function withApiPrefix(path: string) {
 }
 
 /**
- * ✅ Language normalization
- * Dashboard admins may type display names like "Afrikaans" / "Kiswahili".
- * The app/back-end MUST store language TAGS like "af" / "sw".
+ * ✅ Language normalization (ALIGN WITH backend/controller/app)
+ * - Stores language TAGS only (BCP-47-ish)
+ * - Accepts display names typed by admins (Afrikaans, Kiswahili, isiZulu, etc.)
+ * - Canonicalizes tags: pt_BR -> pt-BR, en-za -> en-ZA
  *
- * This normalizes any input into a safe BCP-47-ish tag:
- * - "Afrikaans" -> "af"
- * - "Kiswahili" / "Swahili" -> "sw"
- * - "English" -> "en"
- * - "pt br" / "pt_BR" -> "pt-BR"
- * - already-valid tags pass through and get cleaned
+ * Matches the intent of:
+ * - backend/src/models/Country.js normalizeLangTag
+ * - controller normLangTag + normLangList
+ * - Android screens: toLangTag(...) behavior
  */
-const GLOBAL_LANGUAGE_CHOICES: Array<[string, string]> = [
-  // Core (widely used)
-  ["English", "en"],
-  ["Afrikaans", "af"],
-  ["Arabic", "ar"],
-  ["Bengali", "bn"],
-  ["Bulgarian", "bg"],
-  ["Catalan", "ca"],
-  ["Chinese (Simplified)", "zh-Hans"],
-  ["Chinese (Traditional)", "zh-Hant"],
-  ["Croatian", "hr"],
-  ["Czech", "cs"],
-  ["Danish", "da"],
-  ["Dutch", "nl"],
-  ["Estonian", "et"],
-  ["Finnish", "fi"],
-  ["French", "fr"],
-  ["German", "de"],
-  ["Greek", "el"],
-  ["Hebrew", "he"],
-  ["Hindi", "hi"],
-  ["Hungarian", "hu"],
-  ["Indonesian", "id"],
-  ["Italian", "it"],
-  ["Japanese", "ja"],
-  ["Korean", "ko"],
-  ["Latvian", "lv"],
-  ["Lithuanian", "lt"],
-  ["Malay", "ms"],
-  ["Norwegian", "no"],
-  ["Persian", "fa"],
-  ["Polish", "pl"],
-  ["Portuguese", "pt"],
-  ["Portuguese (Brazil)", "pt-BR"],
-  ["Romanian", "ro"],
-  ["Russian", "ru"],
-  ["Serbian", "sr"],
-  ["Slovak", "sk"],
-  ["Slovenian", "sl"],
-  ["Spanish", "es"],
-  ["Swedish", "sv"],
-  ["Thai", "th"],
-  ["Turkish", "tr"],
-  ["Ukrainian", "uk"],
-  ["Urdu", "ur"],
-  ["Vietnamese", "vi"],
+const LANGUAGE_NAME_TO_TAG: Record<string, string> = {
+  // Core
+  english: "en",
+  afrikaans: "af",
+  arabic: "ar",
+  bengali: "bn",
+  bulgarian: "bg",
+  catalan: "ca",
+  "chinese (simplified)": "zh-Hans",
+  "chinese (traditional)": "zh-Hant",
+  chinese: "zh",
+  croatian: "hr",
+  czech: "cs",
+  danish: "da",
+  dutch: "nl",
+  estonian: "et",
+  finnish: "fi",
+  french: "fr",
+  german: "de",
+  greek: "el",
+  hebrew: "he",
+  hindi: "hi",
+  hungarian: "hu",
+  indonesian: "id",
+  italian: "it",
+  japanese: "ja",
+  korean: "ko",
+  latvian: "lv",
+  lithuanian: "lt",
+  malay: "ms",
+  norwegian: "no",
+  persian: "fa",
+  farsi: "fa",
+  polish: "pl",
+  portuguese: "pt",
+  "portuguese (brazil)": "pt-BR",
+  "portuguese (brasil)": "pt-BR",
+  "brazilian portuguese": "pt-BR",
+  romanian: "ro",
+  russian: "ru",
+  serbian: "sr",
+  slovak: "sk",
+  slovenian: "sl",
+  spanish: "es",
+  swedish: "sv",
+  thai: "th",
+  turkish: "tr",
+  ukrainian: "uk",
+  urdu: "ur",
+  vietnamese: "vi",
 
-  // Africa
-  ["Kiswahili", "sw"],
-  ["Swahili", "sw"],
-  ["Amharic", "am"],
-  ["Hausa", "ha"],
-  ["Igbo", "ig"],
-  ["Yoruba", "yo"],
-  ["Somali", "so"],
-  ["Shona", "sn"],
-  ["Chichewa", "ny"],
-  ["Kinyarwanda", "rw"],
-  ["Kirundi", "rn"],
-  ["Lingala", "ln"],
-  ["Luganda", "lg"],
-  ["Oromo", "om"],
-  ["Tigrinya", "ti"],
-  ["Xitsonga", "ts"],
-  ["Sesotho", "st"],
-  ["Sesotho sa Leboa", "nso"],
-  ["Setswana", "tn"],
-  ["isiZulu", "zu"],
-  ["isiXhosa", "xh"],
-  ["Siswati", "ss"],
-  ["Swati", "ss"],
-  ["Venda", "ve"],
-  ["Tshivenda", "ve"],
-  ["Ndebele", "nr"],
-  ["Xitsonga (Tsonga)", "ts"],
-  ["Fula", "ff"],
-  ["Wolof", "wo"],
-  ["Xitsonga", "ts"],
+  // Africa + SA focus
+  swahili: "sw",
+  kiswahili: "sw",
+  amharic: "am",
+  hausa: "ha",
+  igbo: "ig",
+  yoruba: "yo",
+  somali: "so",
+  shona: "sn",
+  chichewa: "ny",
+  kinyarwanda: "rw",
+  kirundi: "rn",
+  lingala: "ln",
+  luganda: "lg",
+  oromo: "om",
+  tigrinya: "ti",
+  isizulu: "zu",
+  isixhosa: "xh",
+  sesotho: "st",
+  "sesotho sa leboa": "nso",
+  setswana: "tn",
+  xitsonga: "ts",
+  tsonga: "ts",
+  siswati: "ss",
+  swati: "ss",
+  venda: "ve",
+  tshivenda: "ve",
+  ndebele: "nr",
 
-  // Europe
-  ["Irish", "ga"],
-  ["Welsh", "cy"],
-  ["Icelandic", "is"],
-  ["Maltese", "mt"],
-  ["Albanian", "sq"],
-  ["Macedonian", "mk"],
-  ["Bosnian", "bs"],
-  ["Montenegrin", "sr-ME"],
-  ["Belarusian", "be"],
-  ["Georgian", "ka"],
-  ["Armenian", "hy"],
-  ["Azerbaijani", "az"],
-  ["Kazakh", "kk"],
-  ["Uzbek", "uz"],
-  ["Kyrgyz", "ky"],
-  ["Tajik", "tg"],
-  ["Turkmen", "tk"],
-  ["Mongolian", "mn"],
+  // Common aliases admins type
+  "portuguese (br)": "pt-BR",
+  "portuguese (brasil)": "pt-BR",
+  "portuguese (brazil)": "pt-BR",
+  "brazilian portuguese": "pt-BR",
+  mandarin: "zh",
+};
 
-  // South Asia / SE Asia
-  ["Tamil", "ta"],
-  ["Telugu", "te"],
-  ["Kannada", "kn"],
-  ["Malayalam", "ml"],
-  ["Marathi", "mr"],
-  ["Gujarati", "gu"],
-  ["Punjabi", "pa"],
-  ["Sinhala", "si"],
-  ["Nepali", "ne"],
-  ["Burmese", "my"],
-  ["Khmer", "km"],
-  ["Lao", "lo"],
-  ["Tagalog", "tl"],
-  ["Filipino", "fil"],
-
-  // Middle East / Central Asia
-  ["Pashto", "ps"],
-  ["Kurdish", "ku"],
-  ["Dari", "fa-AF"],
-
-  // Americas
-  ["Haitian Creole", "ht"],
-  ["Quechua", "qu"],
-  ["Guarani", "gn"],
-  ["Aymara", "ay"],
-
-  // Common aliases/inputs people type
-  ["Portuguese (Brasil)", "pt-BR"],
-  ["Brazilian Portuguese", "pt-BR"],
-  ["Chinese", "zh"],
-  ["Mandarin", "zh"],
-  ["Farsi", "fa"],
-];
-
-const LANG_NAME_TO_TAG: Record<string, string> = (() => {
-  const out: Record<string, string> = {};
-  for (const [name, tag] of GLOBAL_LANGUAGE_CHOICES) {
-    out[name.trim().toLowerCase()] = tag;
-  }
-  return out;
-})();
-
-function looksLikeTag(v: string) {
-  // Basic BCP-47-ish: en, af, pt-BR, zh-Hant, sr-Latn, etc.
+function looksLikeLangTag(v: string) {
   return /^[A-Za-z]{2,3}([_-][A-Za-z]{4})?([_-][A-Za-z]{2}|\d{3})?([_-][A-Za-z0-9]{5,8})*$/.test(
     v.trim()
   );
@@ -249,46 +193,30 @@ function normalizeLangTag(input: any): string {
   const raw = String(input || "").trim();
   if (!raw) return "en";
 
-  // 1) Exact mapping by display name (Afrikaans -> af, Kiswahili -> sw, etc.)
-  const byName = LANG_NAME_TO_TAG[raw.toLowerCase()];
+  // 1) mapping by name
+  const byName = LANGUAGE_NAME_TO_TAG[raw.toLowerCase()];
   if (byName) return byName;
 
-  // 2) If it already looks like a tag, clean separators and canonicalize a bit
-  if (looksLikeTag(raw)) {
-    const cleaned = raw.replace(/_/g, "-").replace(/\s+/g, "").trim();
-    try {
-      // Canonicalize if supported by runtime
-      // eslint-disable-next-line no-new
-      // @ts-ignore
-      if (typeof Intl !== "undefined" && (Intl as any).Locale) {
-        // @ts-ignore
-        const loc = new (Intl as any).Locale(cleaned);
-        return String(loc.toString());
-      }
-    } catch {
-      // ignore
-    }
-    // fallback: make primary lower, region upper (best-effort)
-    const parts = cleaned.split("-");
+  // 2) tag-like → canonicalize
+  if (looksLikeLangTag(raw)) {
+    const cleaned = raw.replace(/_/g, "-").replace(/\s+/g, "");
+    const parts = cleaned.split("-").filter(Boolean);
     if (parts.length) {
       parts[0] = parts[0].toLowerCase();
       for (let i = 1; i < parts.length; i++) {
         if (parts[i].length === 2) parts[i] = parts[i].toUpperCase();
       }
     }
-    return parts.join("-");
+    return parts.join("-") || "en";
   }
 
-  // 3) Last resort: try mapping after stripping parentheses and extra words
+  // 3) strip parentheses and retry
   const simplified = raw
     .toLowerCase()
     .replace(/\(.*?\)/g, "")
     .replace(/\s+/g, " ")
     .trim();
-  const bySimple = LANG_NAME_TO_TAG[simplified];
-  if (bySimple) return bySimple;
-
-  return "en";
+  return LANGUAGE_NAME_TO_TAG[simplified] || "en";
 }
 
 function normalizeLangListCSV(csv: any): string[] {
@@ -313,6 +241,31 @@ function normalizeLangListCSV(csv: any): string[] {
 
   if (out.length === 0) return ["en"];
   return out;
+}
+
+/**
+ * ✅ Ensure defaultLanguage is included in supportedLanguages (align with app UX)
+ * - If default not in list, we prepend it (so pickers can always show current default).
+ */
+function ensureDefaultInList(defaultLang: string, langs: string[]) {
+  const d = normalizeLangTag(defaultLang || "en");
+  const list = Array.isArray(langs) ? langs.map(normalizeLangTag) : ["en"];
+
+  const seen = new Set<string>();
+  const out: string[] = [];
+  // Put default first
+  out.push(d);
+  seen.add(d);
+
+  for (const x of list) {
+    const t = normalizeLangTag(x);
+    if (!t) continue;
+    if (seen.has(t)) continue;
+    seen.add(t);
+    out.push(t);
+  }
+
+  return out.length ? out : ["en"];
 }
 
 export default function CountriesPage() {
@@ -392,9 +345,10 @@ export default function CountriesPage() {
 
     const dial = normalizeDialCode(form.dialCode);
 
-    // ✅ LANGUAGE FIX: normalize display-names -> tags before saving
+    // ✅ LANGUAGE ALIGNMENT: normalize + ensure default included
     const defaultLang = normalizeLangTag(form.defaultLanguage);
-    const langs = normalizeLangListCSV(form.supportedLanguages);
+    const langsRaw = normalizeLangListCSV(form.supportedLanguages);
+    const langs = ensureDefaultInList(defaultLang, langsRaw);
 
     const payload: any = {
       code,
@@ -404,6 +358,7 @@ export default function CountriesPage() {
       currency: form.currency.trim().toUpperCase(),
       currencyCode: form.currency.trim().toUpperCase(),
 
+      // ✅ DB stores tags
       defaultLanguage: defaultLang,
       supportedLanguages: langs,
       languages: langs,
@@ -413,12 +368,11 @@ export default function CountriesPage() {
       isPublic: !!form.isPublic,
     };
 
-    // ✅ NEW backend prefers dialingCode; we send both to be safe
+    // ✅ Backend prefers dialingCode; send both + legacy phoneRules
     if (dial) {
       payload.dialingCode = dial;
       payload.dialCode = dial;
 
-      // keep legacy controller compatibility if any still read phoneRules
       payload.phoneRules = {
         ...(payload.phoneRules || {}),
         dialCode: dial,
@@ -428,7 +382,7 @@ export default function CountriesPage() {
     }
 
     try {
-      // ✅ Your new backend route: POST /api/admin/countries
+      // ✅ New backend route (if present)
       await api.post(withApiPrefix(`/admin/countries`), payload);
 
       setForm({
@@ -471,7 +425,7 @@ export default function CountriesPage() {
     const nextActive = !country.isActive;
 
     try {
-      // ✅ Your new backend update route (by _id)
+      // ✅ New backend update route (by _id)
       if (country._id) {
         await api.patch(withApiPrefix(`/admin/countries/${country._id}`), { isActive: nextActive });
         setCountries((prev) =>
@@ -503,7 +457,6 @@ export default function CountriesPage() {
     setError(null);
 
     try {
-      // ✅ Your new backend does NOT provide delete (safe), so keep legacy delete attempts
       const code = normalizeIso2(country.code);
       try {
         await api.delete(withApiPrefix(`/admin/countries/${code}`));
@@ -528,7 +481,6 @@ export default function CountriesPage() {
   function openEditModal(c: Country) {
     setEditCountry(c);
 
-    // Keep showing exactly what's in DB (but if DB has names, we still allow edit)
     setEditForm({
       name: c.name || "",
       currency: (c.currencyCode || c.currency || "").toString(),
@@ -553,26 +505,38 @@ export default function CountriesPage() {
 
     const dial = normalizeDialCode(editForm.dialCode);
 
-    // ✅ LANGUAGE FIX: normalize before saving
+    // ✅ LANGUAGE ALIGNMENT: normalize + ensure default included
     const defaultLang = normalizeLangTag(editForm.defaultLanguage);
-    const langs = normalizeLangListCSV(editForm.supportedLanguages);
+    const langsRaw = normalizeLangListCSV(editForm.supportedLanguages);
+    const langs = ensureDefaultInList(defaultLang, langsRaw);
 
     const payload: any = {
       name: editForm.name.trim(),
+
       currency: editForm.currency.trim().toUpperCase(),
-      dialingCode: dial || undefined, // ✅ matches backend model field
-      dialCode: dial || undefined, // ✅ compatibility
+      currencyCode: editForm.currency.trim().toUpperCase(),
+
+      dialingCode: dial || undefined,
+      dialCode: dial || undefined,
 
       defaultLanguage: defaultLang,
       supportedLanguages: langs,
-      languages: langs, // ✅ keeps older code paths working too
+      languages: langs,
 
       timezone: editForm.timezone.trim(),
       isActive: !!editForm.isActive,
     };
 
+    // keep legacy phoneRules in sync if dial is provided
+    if (dial) {
+      payload.phoneRules = {
+        dialCode: dial,
+        dialingCode: dial,
+        countryCallingCode: dial.replace(/^\+/, ""),
+      };
+    }
+
     try {
-      // ✅ Your new backend: PATCH /api/admin/countries/:id
       await api.patch(withApiPrefix(`/admin/countries/${editCountry._id}`), payload);
       setEditOpen(false);
       setEditCountry(null);
@@ -706,6 +670,9 @@ export default function CountriesPage() {
                 border: "1px solid #d1d5db",
               }}
             />
+            <div style={{ fontSize: 11, opacity: 0.7, marginTop: 6 }}>
+              Saved as a <b>tag</b> (e.g. Afrikaans → af, pt_BR → pt-BR).
+            </div>
           </div>
 
           <div>
@@ -723,6 +690,9 @@ export default function CountriesPage() {
                 border: "1px solid #d1d5db",
               }}
             />
+            <div style={{ fontSize: 11, opacity: 0.7, marginTop: 6 }}>
+              Default language is automatically included in this list.
+            </div>
           </div>
 
           <div>
@@ -1048,6 +1018,9 @@ export default function CountriesPage() {
                     border: "1px solid #d1d5db",
                   }}
                 />
+                <div style={{ fontSize: 11, opacity: 0.7, marginTop: 6 }}>
+                  Saved as a <b>tag</b> (Afrikaans → af).
+                </div>
               </div>
 
               <div style={{ gridColumn: "1 / -1" }}>
@@ -1067,6 +1040,9 @@ export default function CountriesPage() {
                     border: "1px solid #d1d5db",
                   }}
                 />
+                <div style={{ fontSize: 11, opacity: 0.7, marginTop: 6 }}>
+                  Default language is automatically included in this list.
+                </div>
               </div>
 
               <div style={{ gridColumn: "1 / -1" }}>
