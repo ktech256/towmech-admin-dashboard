@@ -131,7 +131,6 @@ const LANGUAGE_NAME_TO_TAG: Record<string, string> = {
   polish: "pl",
   portuguese: "pt",
   "portuguese (brazil)": "pt-BR",
-  "portuguese (brasil)": "pt-BR",
   "brazilian portuguese": "pt-BR",
   romanian: "ro",
   russian: "ru",
