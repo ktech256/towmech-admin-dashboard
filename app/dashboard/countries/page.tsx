@@ -1,3 +1,4 @@
+// dashboard/app/dashboard/countries/page.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -83,6 +84,237 @@ function withApiPrefix(path: string) {
   return `${alreadyHasApi ? "" : "/api"}${path.startsWith("/") ? "" : "/"}${path}`;
 }
 
+/**
+ * ✅ Language normalization
+ * Dashboard admins may type display names like "Afrikaans" / "Kiswahili".
+ * The app/back-end MUST store language TAGS like "af" / "sw".
+ *
+ * This normalizes any input into a safe BCP-47-ish tag:
+ * - "Afrikaans" -> "af"
+ * - "Kiswahili" / "Swahili" -> "sw"
+ * - "English" -> "en"
+ * - "pt br" / "pt_BR" -> "pt-BR"
+ * - already-valid tags pass through and get cleaned
+ */
+const GLOBAL_LANGUAGE_CHOICES: Array<[string, string]> = [
+  // Core (widely used)
+  ["English", "en"],
+  ["Afrikaans", "af"],
+  ["Arabic", "ar"],
+  ["Bengali", "bn"],
+  ["Bulgarian", "bg"],
+  ["Catalan", "ca"],
+  ["Chinese (Simplified)", "zh-Hans"],
+  ["Chinese (Traditional)", "zh-Hant"],
+  ["Croatian", "hr"],
+  ["Czech", "cs"],
+  ["Danish", "da"],
+  ["Dutch", "nl"],
+  ["Estonian", "et"],
+  ["Finnish", "fi"],
+  ["French", "fr"],
+  ["German", "de"],
+  ["Greek", "el"],
+  ["Hebrew", "he"],
+  ["Hindi", "hi"],
+  ["Hungarian", "hu"],
+  ["Indonesian", "id"],
+  ["Italian", "it"],
+  ["Japanese", "ja"],
+  ["Korean", "ko"],
+  ["Latvian", "lv"],
+  ["Lithuanian", "lt"],
+  ["Malay", "ms"],
+  ["Norwegian", "no"],
+  ["Persian", "fa"],
+  ["Polish", "pl"],
+  ["Portuguese", "pt"],
+  ["Portuguese (Brazil)", "pt-BR"],
+  ["Romanian", "ro"],
+  ["Russian", "ru"],
+  ["Serbian", "sr"],
+  ["Slovak", "sk"],
+  ["Slovenian", "sl"],
+  ["Spanish", "es"],
+  ["Swedish", "sv"],
+  ["Thai", "th"],
+  ["Turkish", "tr"],
+  ["Ukrainian", "uk"],
+  ["Urdu", "ur"],
+  ["Vietnamese", "vi"],
+
+  // Africa
+  ["Kiswahili", "sw"],
+  ["Swahili", "sw"],
+  ["Amharic", "am"],
+  ["Hausa", "ha"],
+  ["Igbo", "ig"],
+  ["Yoruba", "yo"],
+  ["Somali", "so"],
+  ["Shona", "sn"],
+  ["Chichewa", "ny"],
+  ["Kinyarwanda", "rw"],
+  ["Kirundi", "rn"],
+  ["Lingala", "ln"],
+  ["Luganda", "lg"],
+  ["Oromo", "om"],
+  ["Tigrinya", "ti"],
+  ["Xitsonga", "ts"],
+  ["Sesotho", "st"],
+  ["Sesotho sa Leboa", "nso"],
+  ["Setswana", "tn"],
+  ["isiZulu", "zu"],
+  ["isiXhosa", "xh"],
+  ["Siswati", "ss"],
+  ["Swati", "ss"],
+  ["Venda", "ve"],
+  ["Tshivenda", "ve"],
+  ["Ndebele", "nr"],
+  ["Xitsonga (Tsonga)", "ts"],
+  ["Fula", "ff"],
+  ["Wolof", "wo"],
+  ["Xitsonga", "ts"],
+
+  // Europe
+  ["Irish", "ga"],
+  ["Welsh", "cy"],
+  ["Icelandic", "is"],
+  ["Maltese", "mt"],
+  ["Albanian", "sq"],
+  ["Macedonian", "mk"],
+  ["Bosnian", "bs"],
+  ["Montenegrin", "sr-ME"],
+  ["Belarusian", "be"],
+  ["Georgian", "ka"],
+  ["Armenian", "hy"],
+  ["Azerbaijani", "az"],
+  ["Kazakh", "kk"],
+  ["Uzbek", "uz"],
+  ["Kyrgyz", "ky"],
+  ["Tajik", "tg"],
+  ["Turkmen", "tk"],
+  ["Mongolian", "mn"],
+
+  // South Asia / SE Asia
+  ["Tamil", "ta"],
+  ["Telugu", "te"],
+  ["Kannada", "kn"],
+  ["Malayalam", "ml"],
+  ["Marathi", "mr"],
+  ["Gujarati", "gu"],
+  ["Punjabi", "pa"],
+  ["Sinhala", "si"],
+  ["Nepali", "ne"],
+  ["Burmese", "my"],
+  ["Khmer", "km"],
+  ["Lao", "lo"],
+  ["Tagalog", "tl"],
+  ["Filipino", "fil"],
+
+  // Middle East / Central Asia
+  ["Pashto", "ps"],
+  ["Kurdish", "ku"],
+  ["Dari", "fa-AF"],
+
+  // Americas
+  ["Haitian Creole", "ht"],
+  ["Quechua", "qu"],
+  ["Guarani", "gn"],
+  ["Aymara", "ay"],
+
+  // Common aliases/inputs people type
+  ["Portuguese (Brasil)", "pt-BR"],
+  ["Brazilian Portuguese", "pt-BR"],
+  ["Chinese", "zh"],
+  ["Mandarin", "zh"],
+  ["Farsi", "fa"],
+];
+
+const LANG_NAME_TO_TAG: Record<string, string> = (() => {
+  const out: Record<string, string> = {};
+  for (const [name, tag] of GLOBAL_LANGUAGE_CHOICES) {
+    out[name.trim().toLowerCase()] = tag;
+  }
+  return out;
+})();
+
+function looksLikeTag(v: string) {
+  // Basic BCP-47-ish: en, af, pt-BR, zh-Hant, sr-Latn, etc.
+  return /^[A-Za-z]{2,3}([_-][A-Za-z]{4})?([_-][A-Za-z]{2}|\d{3})?([_-][A-Za-z0-9]{5,8})*$/.test(
+    v.trim()
+  );
+}
+
+function normalizeLangTag(input: any): string {
+  const raw = String(input || "").trim();
+  if (!raw) return "en";
+
+  // 1) Exact mapping by display name (Afrikaans -> af, Kiswahili -> sw, etc.)
+  const byName = LANG_NAME_TO_TAG[raw.toLowerCase()];
+  if (byName) return byName;
+
+  // 2) If it already looks like a tag, clean separators and canonicalize a bit
+  if (looksLikeTag(raw)) {
+    const cleaned = raw.replace(/_/g, "-").replace(/\s+/g, "").trim();
+    try {
+      // Canonicalize if supported by runtime
+      // eslint-disable-next-line no-new
+      // @ts-ignore
+      if (typeof Intl !== "undefined" && (Intl as any).Locale) {
+        // @ts-ignore
+        const loc = new (Intl as any).Locale(cleaned);
+        return String(loc.toString());
+      }
+    } catch {
+      // ignore
+    }
+    // fallback: make primary lower, region upper (best-effort)
+    const parts = cleaned.split("-");
+    if (parts.length) {
+      parts[0] = parts[0].toLowerCase();
+      for (let i = 1; i < parts.length; i++) {
+        if (parts[i].length === 2) parts[i] = parts[i].toUpperCase();
+      }
+    }
+    return parts.join("-");
+  }
+
+  // 3) Last resort: try mapping after stripping parentheses and extra words
+  const simplified = raw
+    .toLowerCase()
+    .replace(/\(.*?\)/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const bySimple = LANG_NAME_TO_TAG[simplified];
+  if (bySimple) return bySimple;
+
+  return "en";
+}
+
+function normalizeLangListCSV(csv: any): string[] {
+  const raw = String(csv || "");
+  const parts = raw
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+  const tags = parts.map((x) => normalizeLangTag(x)).filter(Boolean);
+
+  // Unique, keep order
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const t of tags) {
+    const key = t.trim();
+    if (!key) continue;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
+  }
+
+  if (out.length === 0) return ["en"];
+  return out;
+}
+
 export default function CountriesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -160,6 +392,10 @@ export default function CountriesPage() {
 
     const dial = normalizeDialCode(form.dialCode);
 
+    // ✅ LANGUAGE FIX: normalize display-names -> tags before saving
+    const defaultLang = normalizeLangTag(form.defaultLanguage);
+    const langs = normalizeLangListCSV(form.supportedLanguages);
+
     const payload: any = {
       code,
       name: form.name.trim(),
@@ -168,15 +404,9 @@ export default function CountriesPage() {
       currency: form.currency.trim().toUpperCase(),
       currencyCode: form.currency.trim().toUpperCase(),
 
-      defaultLanguage: form.defaultLanguage.trim(),
-      supportedLanguages: form.supportedLanguages
-        .split(",")
-        .map((x) => x.trim())
-        .filter(Boolean),
-      languages: form.supportedLanguages
-        .split(",")
-        .map((x) => x.trim())
-        .filter(Boolean),
+      defaultLanguage: defaultLang,
+      supportedLanguages: langs,
+      languages: langs,
 
       timezone: form.timezone.trim(),
       isActive: !!form.isActive,
@@ -297,6 +527,8 @@ export default function CountriesPage() {
 
   function openEditModal(c: Country) {
     setEditCountry(c);
+
+    // Keep showing exactly what's in DB (but if DB has names, we still allow edit)
     setEditForm({
       name: c.name || "",
       currency: (c.currencyCode || c.currency || "").toString(),
@@ -321,16 +553,20 @@ export default function CountriesPage() {
 
     const dial = normalizeDialCode(editForm.dialCode);
 
+    // ✅ LANGUAGE FIX: normalize before saving
+    const defaultLang = normalizeLangTag(editForm.defaultLanguage);
+    const langs = normalizeLangListCSV(editForm.supportedLanguages);
+
     const payload: any = {
       name: editForm.name.trim(),
       currency: editForm.currency.trim().toUpperCase(),
       dialingCode: dial || undefined, // ✅ matches backend model field
       dialCode: dial || undefined, // ✅ compatibility
-      defaultLanguage: editForm.defaultLanguage.trim().toLowerCase(),
-      supportedLanguages: editForm.supportedLanguages
-        .split(",")
-        .map((x) => x.trim().toLowerCase())
-        .filter(Boolean),
+
+      defaultLanguage: defaultLang,
+      supportedLanguages: langs,
+      languages: langs, // ✅ keeps older code paths working too
+
       timezone: editForm.timezone.trim(),
       isActive: !!editForm.isActive,
     };
@@ -462,7 +698,7 @@ export default function CountriesPage() {
             <input
               value={form.defaultLanguage}
               onChange={(e) => setForm((p) => ({ ...p, defaultLanguage: e.target.value }))}
-              placeholder="en"
+              placeholder="en (or Afrikaans, Kiswahili, etc.)"
               style={{
                 width: "100%",
                 padding: 10,
@@ -479,7 +715,7 @@ export default function CountriesPage() {
             <input
               value={form.supportedLanguages}
               onChange={(e) => setForm((p) => ({ ...p, supportedLanguages: e.target.value }))}
-              placeholder="en,zu,af"
+              placeholder="en,zu,af (or English, isiZulu, Afrikaans)"
               style={{
                 width: "100%",
                 padding: 10,
@@ -804,7 +1040,7 @@ export default function CountriesPage() {
                   onChange={(e) =>
                     setEditForm((p) => ({ ...p, defaultLanguage: e.target.value }))
                   }
-                  placeholder="en"
+                  placeholder="en (or Afrikaans, Kiswahili, etc.)"
                   style={{
                     width: "100%",
                     padding: 10,
@@ -823,7 +1059,7 @@ export default function CountriesPage() {
                   onChange={(e) =>
                     setEditForm((p) => ({ ...p, supportedLanguages: e.target.value }))
                   }
-                  placeholder="en,zu,af"
+                  placeholder="en,zu,af (or English, isiZulu, Afrikaans)"
                   style={{
                     width: "100%",
                     padding: 10,
