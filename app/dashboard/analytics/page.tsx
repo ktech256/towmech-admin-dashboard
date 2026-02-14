@@ -1,15 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ModuleHeader } from "@/components/dashboard/module-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { fetchAnalyticsSummary } from "@/lib/api/analytics";
 import { JobStatusChart } from "@/components/dashboard/analytics/JobStatusChart";
+import { useCountryStore } from "@/lib/store/countryStore";
+
+type Country = {
+  _id: string;
+  code: string;
+  name: string;
+  currency: string;
+  isActive: boolean;
+};
 
 type Analytics = {
-  currency: string;
+  currency?: string;
   business: {
     revenue: {
       totalRevenue: number;
@@ -46,12 +55,65 @@ type Analytics = {
   };
 };
 
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  "http://localhost:5000";
+
+function getToken() {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("adminToken") || localStorage.getItem("token");
+}
+
+function authHeaders(extra: Record<string, string> = {}) {
+  const token = getToken();
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...extra,
+  };
+}
+
+function formatMoney(amount: number, currencyCode: string) {
+  const n = Number(amount || 0) || 0;
+  return `${n.toLocaleString()} ${currencyCode}`.trim();
+}
+
 export default function AnalyticsPage() {
+  const { countryCode } = useCountryStore();
+
+  const [countries, setCountries] = useState<Country[]>([]);
   const [data, setData] = useState<Analytics | null>(null);
+
   const [loading, setLoading] = useState(true);
+  const [loadingCountries, setLoadingCountries] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = async () => {
+  const loadCountries = async () => {
+    setLoadingCountries(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/countries`, {
+        method: "GET",
+        headers: authHeaders(),
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.message || "Failed to load countries");
+
+      const list: Country[] = Array.isArray(json?.countries) ? json.countries : [];
+      setCountries(list);
+    } finally {
+      setLoadingCountries(false);
+    }
+  };
+
+  const loadAnalytics = async () => {
+    if (!countryCode) {
+      setLoading(false);
+      setData(null);
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -59,16 +121,44 @@ export default function AnalyticsPage() {
       setData(res);
     } catch (err: any) {
       setError(err?.response?.data?.message || "Failed to load analytics");
+      setData(null);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    load();
+    loadCountries().catch(() => {
+      // ignore here; currency can still fall back safely
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const currency = data?.currency || "ZAR";
+  useEffect(() => {
+    loadAnalytics();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countryCode]);
+
+  const resolvedCurrency = useMemo(() => {
+    // 1) Prefer Countries table currency for the selected workspace country
+    const fromCountries = countries.find((c) => c.code === countryCode)?.currency;
+    if (fromCountries) return fromCountries;
+
+    // 2) If backend sends a currency, use it
+    const fromBackend = (data as any)?.currency;
+    if (typeof fromBackend === "string" && fromBackend.trim()) return fromBackend.trim();
+
+    // 3) Last resort: empty (DON'T force ZAR)
+    return "";
+  }, [countries, countryCode, data]);
+
+  if (!countryCode) {
+    return (
+      <div className="flex h-[60vh] items-center justify-center text-sm text-muted-foreground">
+        Select a country to view analytics.
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -78,20 +168,18 @@ export default function AnalyticsPage() {
       />
 
       <div className="flex justify-end">
-        <Button size="sm" onClick={load} disabled={loading}>
+        <Button size="sm" onClick={loadAnalytics} disabled={loading}>
           {loading ? "Refreshing..." : "Refresh Analytics"}
         </Button>
       </div>
 
-      {loading && (
+      {(loading || loadingCountries) && (
         <div className="py-10 text-center text-sm text-muted-foreground">
           Loading analytics dashboard...
         </div>
       )}
 
-      {error && (
-        <div className="py-10 text-center text-sm text-red-600">{error}</div>
-      )}
+      {error && <div className="py-10 text-center text-sm text-red-600">{error}</div>}
 
       {!loading && data && (
         <>
@@ -99,14 +187,26 @@ export default function AnalyticsPage() {
           <Card>
             <CardHeader className="flex flex-row justify-between items-center">
               <CardTitle>Business Metrics</CardTitle>
-              <Badge variant="secondary">{currency}</Badge>
+              {resolvedCurrency ? <Badge variant="secondary">{resolvedCurrency}</Badge> : null}
             </CardHeader>
 
             <CardContent className="grid gap-4 md:grid-cols-4">
-              <Stat label="Total Revenue" value={`${data.business.revenue.totalRevenue} ${currency}`} />
-              <Stat label="Today Revenue" value={`${data.business.revenue.revenueToday} ${currency}`} />
-              <Stat label="Week Revenue" value={`${data.business.revenue.revenueWeek} ${currency}`} />
-              <Stat label="Month Revenue" value={`${data.business.revenue.revenueMonth} ${currency}`} />
+              <Stat
+                label="Total Revenue"
+                value={formatMoney(data.business.revenue.totalRevenue, resolvedCurrency)}
+              />
+              <Stat
+                label="Today Revenue"
+                value={formatMoney(data.business.revenue.revenueToday, resolvedCurrency)}
+              />
+              <Stat
+                label="Week Revenue"
+                value={formatMoney(data.business.revenue.revenueWeek, resolvedCurrency)}
+              />
+              <Stat
+                label="Month Revenue"
+                value={formatMoney(data.business.revenue.revenueMonth, resolvedCurrency)}
+              />
             </CardContent>
           </Card>
 

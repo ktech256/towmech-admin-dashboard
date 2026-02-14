@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
 import { fetchPricingConfig, updatePricingConfig } from "@/lib/api/pricing";
+import { useCountryStore } from "@/lib/store/countryStore";
 
 type ProviderPricing = {
   baseFee: number;
@@ -107,7 +108,17 @@ export default function PricingPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // ✅ multi-country scope
+  const { countryCode } = useCountryStore();
+
   const loadConfig = async () => {
+    if (!countryCode) {
+      setConfig(null);
+      setLoading(false);
+      setError("Please select a country first.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -143,7 +154,8 @@ export default function PricingPage() {
 
   useEffect(() => {
     loadConfig();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countryCode]);
 
   // ✅ current TowTruck type pricing (from config)
   const currentTowTruckTypePricing = useMemo(() => {
@@ -216,9 +228,10 @@ export default function PricingPage() {
         towTruckTypePricing: config.towTruckTypePricing,
         bookingFees: {
           towTruckPercent: Number(config.bookingFees?.towTruckPercent ?? 15),
-          mechanicFixed: activeTab === "Mechanic"
-            ? mechanicBaseFee
-            : Number(config.bookingFees?.mechanicFixed ?? 200),
+          mechanicFixed:
+            activeTab === "Mechanic"
+              ? mechanicBaseFee
+              : Number(config.bookingFees?.mechanicFixed ?? 200),
         },
       };
 
@@ -226,7 +239,9 @@ export default function PricingPage() {
 
       const returned = res?.config;
       if (returned) {
-        const safeTowTruckTypePricing = ensureTowTruckTypePricing(returned?.towTruckTypePricing);
+        const safeTowTruckTypePricing = ensureTowTruckTypePricing(
+          returned?.towTruckTypePricing
+        );
 
         setConfig({
           currency: returned?.currency || config.currency || "ZAR",
@@ -243,7 +258,11 @@ export default function PricingPage() {
           towTruckTypePricing: safeTowTruckTypePricing,
           bookingFees: {
             towTruckPercent: Number(returned?.bookingFees?.towTruckPercent ?? 15),
-            mechanicFixed: Number(returned?.bookingFees?.mechanicFixed ?? payload.bookingFees.mechanicFixed ?? 200),
+            mechanicFixed: Number(
+              returned?.bookingFees?.mechanicFixed ??
+                payload.bookingFees.mechanicFixed ??
+                200
+            ),
           },
         });
       } else {
@@ -318,9 +337,7 @@ export default function PricingPage() {
                 </label>
                 <Input
                   value={config.currency || ""}
-                  onChange={(e) =>
-                    setConfig({ ...config, currency: e.target.value })
-                  }
+                  onChange={(e) => setConfig({ ...config, currency: e.target.value })}
                   placeholder="ZAR"
                 />
               </div>
@@ -346,8 +363,9 @@ export default function PricingPage() {
                     </select>
 
                     <p className="text-xs text-muted-foreground">
-                      These values are the primary admin settings for the selected TowTruck type.
-                      Distance, surge, vehicle multipliers, and any remaining multipliers are applied automatically by the backend.
+                      These values are the primary admin settings for the selected TowTruck
+                      type. Distance, surge, vehicle multipliers, and any remaining multipliers
+                      are applied automatically by the backend.
                     </p>
                   </div>
 
@@ -424,7 +442,8 @@ export default function PricingPage() {
                         }
                       />
                       <p className="text-xs text-muted-foreground">
-                        This also controls the Mechanic booking fee fallback used by the mobile app.
+                        This also controls the Mechanic booking fee fallback used by the mobile
+                        app.
                       </p>
                     </div>
 
@@ -471,7 +490,7 @@ export default function PricingPage() {
               )}
 
               <div className="flex justify-end">
-                <Button onClick={handleSave} disabled={saving}>
+                <Button onClick={handleSave} disabled={saving || !countryCode}>
                   {saving ? "Saving..." : "Save Pricing"}
                 </Button>
               </div>

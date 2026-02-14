@@ -41,6 +41,9 @@ type AdminUser = {
   email: string;
   role: string;
 
+  // ✅ Added (so table can show it)
+  phone?: string;
+
   permissions?: Record<string, boolean>;
   accountStatus?: {
     isSuspended?: boolean;
@@ -52,7 +55,20 @@ type AdminUser = {
 };
 
 const PERMISSION_KEYS = [
+  // ✅ controls if admin can change Country workspace
+  {
+    key: "canSwitchCountryWorkspace",
+    label: "Switch Country Workspace (Multi-country access)",
+  },
+
   { key: "canViewOverview", label: "View Overview Dashboard" },
+
+  // ✅ Support permission (so you can show/hide Support menu)
+  { key: "canViewSupport", label: "View Support" },
+
+  // ✅ Live Map permission (separate from Zones)
+  { key: "canViewLiveMap", label: "View Live Map" },
+
   { key: "canVerifyProviders", label: "Verify Providers" },
   { key: "canApprovePayments", label: "Approve Payments" },
   { key: "canRefundPayments", label: "Refund Payments" },
@@ -65,7 +81,22 @@ const PERMISSION_KEYS = [
   { key: "canManageServiceCategories", label: "Manage Service Categories" },
   { key: "canViewAnalytics", label: "View Analytics" },
   { key: "canManagePricing", label: "Manage Pricing" },
+
+  // ✅ other menu perms
+  { key: "canManageChats", label: "Manage Chats" },
+  { key: "canManageNotifications", label: "Manage Notifications" },
+  { key: "canManageRoles", label: "Manage Roles & Permissions" },
+  { key: "canManageCountries", label: "Manage Countries" },
+  { key: "canManageCountryServices", label: "Manage Country Services" },
+  { key: "canManagePaymentRouting", label: "Manage Payment Routing" },
+  { key: "canManageLegal", label: "Manage Legal" },
+  { key: "canManageInsurance", label: "Manage Insurance" },
 ];
+
+function fmtPhone(v?: string) {
+  const s = String(v ?? "").trim();
+  return s ? s : "—";
+}
 
 export default function RolesPage() {
   const [tab, setTab] = useState<"admins" | "create">("admins");
@@ -85,7 +116,7 @@ export default function RolesPage() {
   // ✅ Create Admin Form
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState(""); // ✅ NEW
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
 
   const [role, setRole] = useState<"Admin" | "SuperAdmin">("Admin");
@@ -116,7 +147,8 @@ export default function RolesPage() {
       (a) =>
         a.name.toLowerCase().includes(s) ||
         a.email.toLowerCase().includes(s) ||
-        a.role.toLowerCase().includes(s)
+        a.role.toLowerCase().includes(s) ||
+        (a.phone || "").toLowerCase().includes(s)
     );
   }, [admins, search]);
 
@@ -195,7 +227,7 @@ export default function RolesPage() {
       await createAdmin({
         name,
         email,
-        phone, // ✅ NEW
+        phone,
         password,
         role,
         permissions: createPermissions,
@@ -205,7 +237,7 @@ export default function RolesPage() {
 
       setName("");
       setEmail("");
-      setPhone(""); // ✅ NEW
+      setPhone("");
       setPassword("");
       setRole("Admin");
       setCreatePermissions({});
@@ -248,7 +280,7 @@ export default function RolesPage() {
             <CardTitle className="text-base">Admin Accounts</CardTitle>
             <Input
               className="max-w-sm"
-              placeholder="Search admin name, email..."
+              placeholder="Search admin name, email, phone..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -266,6 +298,10 @@ export default function RolesPage() {
                     <TableRow>
                       <TableHead>Name</TableHead>
                       <TableHead>Email</TableHead>
+
+                      {/* ✅ ADDED column (without removing anything else) */}
+                      <TableHead>Phone</TableHead>
+
                       <TableHead>Role</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Permissions</TableHead>
@@ -277,7 +313,7 @@ export default function RolesPage() {
                     {filteredAdmins.length === 0 ? (
                       <TableRow>
                         <TableCell
-                          colSpan={6}
+                          colSpan={7}
                           className="text-center py-8 text-sm text-muted-foreground"
                         >
                           No admin users found ✅
@@ -288,6 +324,10 @@ export default function RolesPage() {
                         <TableRow key={a._id}>
                           <TableCell className="font-medium">{a.name}</TableCell>
                           <TableCell>{a.email}</TableCell>
+
+                          {/* ✅ ADDED cell */}
+                          <TableCell>{fmtPhone(a.phone)}</TableCell>
+
                           <TableCell>
                             <Badge variant="secondary">{a.role}</Badge>
                           </TableCell>

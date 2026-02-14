@@ -35,6 +35,8 @@ import {
   replyAdminToTicket,
 } from "@/lib/api/support";
 
+import { useCountryStore } from "@/lib/store/countryStore";
+
 type TicketMessage = {
   _id?: string;
   message: string;
@@ -70,7 +72,7 @@ type Ticket = {
 
   adminNote?: string;
 
-  messages?: TicketMessage[]; // ✅ NEW threaded replies
+  messages?: TicketMessage[]; // ✅ threaded replies
 
   auditLogs?: {
     action: string;
@@ -81,6 +83,8 @@ type Ticket = {
 };
 
 export default function SupportPage() {
+  const { countryCode } = useCountryStore();
+
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
@@ -99,6 +103,12 @@ export default function SupportPage() {
   const [sendingReply, setSendingReply] = useState(false);
 
   const loadTickets = async () => {
+    if (!countryCode) {
+      setTickets([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
       const data = await fetchAdminTickets({
@@ -130,7 +140,7 @@ export default function SupportPage() {
   useEffect(() => {
     loadTickets();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, typeFilter, priorityFilter]);
+  }, [countryCode, statusFilter, typeFilter, priorityFilter]);
 
   const filteredTickets = useMemo(() => {
     if (!search) return tickets;
@@ -147,17 +157,23 @@ export default function SupportPage() {
 
   const getStatusBadge = (status: string) => {
     if (status === "OPEN") return <Badge className="bg-yellow-600">OPEN</Badge>;
-    if (status === "IN_PROGRESS") return <Badge className="bg-blue-600">IN PROGRESS</Badge>;
-    if (status === "RESOLVED") return <Badge className="bg-green-600">RESOLVED</Badge>;
-    if (status === "CLOSED") return <Badge className="bg-slate-700">CLOSED</Badge>;
+    if (status === "IN_PROGRESS")
+      return <Badge className="bg-blue-600">IN PROGRESS</Badge>;
+    if (status === "RESOLVED")
+      return <Badge className="bg-green-600">RESOLVED</Badge>;
+    if (status === "CLOSED")
+      return <Badge className="bg-slate-700">CLOSED</Badge>;
     return <Badge variant="secondary">{status}</Badge>;
   };
 
   const getPriorityBadge = (priority: string) => {
     if (priority === "LOW") return <Badge variant="outline">LOW</Badge>;
-    if (priority === "MEDIUM") return <Badge className="bg-slate-500">MEDIUM</Badge>;
-    if (priority === "HIGH") return <Badge className="bg-orange-600">HIGH</Badge>;
-    if (priority === "URGENT") return <Badge className="bg-red-600">URGENT</Badge>;
+    if (priority === "MEDIUM")
+      return <Badge className="bg-slate-500">MEDIUM</Badge>;
+    if (priority === "HIGH")
+      return <Badge className="bg-orange-600">HIGH</Badge>;
+    if (priority === "URGENT")
+      return <Badge className="bg-red-600">URGENT</Badge>;
     return <Badge variant="secondary">{priority}</Badge>;
   };
 
@@ -167,7 +183,6 @@ export default function SupportPage() {
       await assignTicket(ticketId);
       await loadTickets();
 
-      // refresh modal if open
       if (selectedId === ticketId) await loadSelectedTicket(ticketId);
 
       alert("Ticket assigned ✅");
@@ -184,7 +199,6 @@ export default function SupportPage() {
       await updateTicket(ticketId, { status });
       await loadTickets();
 
-      // refresh modal if open
       if (selectedId === ticketId) await loadSelectedTicket(ticketId);
 
       alert("Ticket updated ✅");
@@ -224,10 +238,7 @@ export default function SupportPage() {
 
       setReplyDraft("");
 
-      // refresh modal thread
       await loadSelectedTicket(selected._id);
-
-      // refresh list (status might auto-change to IN_PROGRESS)
       await loadTickets();
 
       alert("Reply sent ✅");
@@ -238,14 +249,17 @@ export default function SupportPage() {
     }
   };
 
-  // Build a single timeline: opener + thread replies
   const threadItems = useMemo(() => {
     if (!selected) return [];
     const opener: TicketMessage = {
       message: selected.message,
       senderRole: selected.createdBy?.role || "CUSTOMER",
       senderId: selected.createdBy
-        ? { name: selected.createdBy.name, email: selected.createdBy.email, role: selected.createdBy.role }
+        ? {
+            name: selected.createdBy.name,
+            email: selected.createdBy.email,
+            role: selected.createdBy.role,
+          }
         : undefined,
       createdAt: selected.createdAt,
     };
@@ -259,6 +273,14 @@ export default function SupportPage() {
     });
   }, [selected]);
 
+  if (!countryCode) {
+    return (
+      <div className="flex h-[60vh] items-center justify-center text-sm text-muted-foreground">
+        Select a country to view support tickets.
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <ModuleHeader
@@ -266,7 +288,6 @@ export default function SupportPage() {
         description="View and manage customer & provider support tickets."
       />
 
-      {/* ✅ Filters */}
       <Card>
         <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <CardTitle className="text-base">Support Inbox</CardTitle>
@@ -343,7 +364,10 @@ export default function SupportPage() {
                 <TableBody>
                   {filteredTickets.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-sm text-muted-foreground">
+                      <TableCell
+                        colSpan={7}
+                        className="text-center py-8 text-sm text-muted-foreground"
+                      >
                         No tickets found ✅
                       </TableCell>
                     </TableRow>
@@ -399,8 +423,10 @@ export default function SupportPage() {
         </CardContent>
       </Card>
 
-      {/* ✅ Modal */}
-      <Dialog open={!!selectedId} onOpenChange={(open) => (!open ? closeTicket() : null)}>
+      <Dialog
+        open={!!selectedId}
+        onOpenChange={(open) => (!open ? closeTicket() : null)}
+      >
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Ticket Details</DialogTitle>
@@ -435,7 +461,6 @@ export default function SupportPage() {
                   : "Not assigned"}
               </div>
 
-              {/* ✅ Thread */}
               <div className="space-y-2">
                 <div className="font-semibold">Conversation</div>
                 <div className="max-h-[320px] overflow-auto rounded-md border bg-slate-50 p-3 space-y-3">
@@ -444,8 +469,7 @@ export default function SupportPage() {
                   ) : (
                     threadItems.map((m, idx) => {
                       const who =
-                        m?.senderId?.name ||
-                        (m?.senderRole ? m.senderRole : "USER");
+                        m?.senderId?.name || (m?.senderRole ? m.senderRole : "USER");
                       const when = m?.createdAt
                         ? new Date(m.createdAt).toLocaleString()
                         : "";
@@ -463,7 +487,6 @@ export default function SupportPage() {
                 </div>
               </div>
 
-              {/* ✅ Reply box */}
               <div className="space-y-2">
                 <div className="font-semibold">Reply</div>
                 <Textarea
@@ -499,7 +522,6 @@ export default function SupportPage() {
                 </div>
               </div>
 
-              {/* ✅ Audit Logs */}
               <div>
                 <div className="font-semibold">Audit Logs</div>
                 <div className="mt-2 space-y-2 rounded-md border bg-slate-50 p-3">

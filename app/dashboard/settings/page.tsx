@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 
+import { useCountryStore } from "@/lib/store/countryStore";
 import { fetchSystemSettings, updateSystemSettings } from "@/lib/api/settings";
 
 const PAYMENT_GATEWAYS = [
@@ -30,6 +31,9 @@ export default function SettingsPage() {
   const [tab, setTab] = useState<"general" | "peak" | "integrations">("general");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  // ✅ multi-country scope
+  const { countryCode } = useCountryStore();
 
   const [settings, setSettings] = useState<any>({
     platformName: "",
@@ -66,6 +70,11 @@ export default function SettingsPage() {
   });
 
   const loadSettings = async () => {
+    if (!countryCode) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
       const data = await fetchSystemSettings();
@@ -88,9 +97,15 @@ export default function SettingsPage() {
 
   useEffect(() => {
     loadSettings();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countryCode]);
 
   const handleSave = async () => {
+    if (!countryCode) {
+      alert("Select a country first ❌");
+      return;
+    }
+
     setSaving(true);
     try {
       await updateSystemSettings(settings);
@@ -102,6 +117,14 @@ export default function SettingsPage() {
       setSaving(false);
     }
   };
+
+  if (!countryCode) {
+    return (
+      <div className="flex h-[60vh] items-center justify-center text-sm text-muted-foreground">
+        Select a country to manage settings.
+      </div>
+    );
+  }
 
   if (loading) {
     return (

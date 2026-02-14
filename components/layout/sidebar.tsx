@@ -1,91 +1,71 @@
+// Dashboard/components/layout/sidebar.tsx
 "use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  LayoutDashboard,
-  Users,
-  Truck,
-  MapPinned,
-  Route,
-  BadgeDollarSign,
-  CreditCard,
-  LifeBuoy,
-  Star, // ✅ added
-  Bell,
-  ShieldCheck,
-  LineChart,
-  Lock,
-  Settings,
-  MapPin,
-  MessagesSquare, // ✅ NEW: Chats icon
-} from "lucide-react";
-
-import { cn } from "@/lib/utils";
 
 const navItems = [
-  { label: "Overview", href: "/dashboard", icon: LayoutDashboard },
-  { label: "User Management", href: "/dashboard/users", icon: Users },
-  { label: "Provider Management", href: "/dashboard/providers", icon: Truck },
-  { label: "Trip / Job Management", href: "/dashboard/jobs", icon: Route },
-  { label: "Live Map", href: "/dashboard/live-map", icon: MapPinned },
-  { label: "Pricing & Commission", href: "/dashboard/pricing", icon: BadgeDollarSign },
-  { label: "Payments & Finance", href: "/dashboard/payments", icon: CreditCard },
-  { label: "Support & Disputes", href: "/dashboard/support", icon: LifeBuoy },
+  { label: "Overview", href: "/dashboard", icon: "🏠" },
+  { label: "Analytics", href: "/dashboard/analytics", icon: "📈" },
+  { label: "Live Map", href: "/dashboard/live-map", icon: "🗺️" },
+  { label: "Users", href: "/dashboard/users", icon: "👥" },
+  { label: "Providers", href: "/dashboard/providers", icon: "🚚" },
+  { label: "Jobs", href: "/dashboard/jobs", icon: "🧾" },
+  { label: "Payments", href: "/dashboard/payments", icon: "💳" },
+  { label: "Pricing", href: "/dashboard/pricing", icon: "🏷️" },
+  { label: "Service Categories", href: "/dashboard/service-categories", icon: "🧰" },
+  { label: "Zones", href: "/dashboard/zones", icon: "📍" },
+  { label: "Support", href: "/dashboard/support", icon: "🎧" },
 
-  // ✅ Ratings link
-  { label: "Ratings", href: "/dashboard/support/ratings", icon: Star },
+  // ✅ add/keep these (critical)
+  { label: "Chats", href: "/dashboard/chats", icon: "💬" },
+  { label: "Notifications", href: "/dashboard/notifications", icon: "🔔" },
+  { label: "Safety & Security", href: "/dashboard/safety", icon: "🛡️" },
+  { label: "Roles & Permissions", href: "/dashboard/roles", icon: "🔐" },
 
-  // ✅ NEW: Chats (Admin)
-  { label: "Chats", href: "/dashboard/chats", icon: MessagesSquare },
-
-  { label: "Notifications", href: "/dashboard/notifications", icon: Bell },
-  { label: "Safety & Security", href: "/dashboard/safety", icon: ShieldCheck },
-  { label: "Analytics", href: "/dashboard/analytics", icon: LineChart },
-  { label: "Roles & Permissions", href: "/dashboard/roles", icon: Lock },
-
-  // ✅ Zones
-  { label: "Zones", href: "/dashboard/zones", icon: MapPin },
-
-  { label: "System Settings", href: "/dashboard/settings", icon: Settings },
+  { label: "System Settings", href: "/dashboard/system-settings", icon: "⚙️" },
+  { label: "Countries", href: "/dashboard/countries", icon: "🌍" },
+  { label: "Country Services", href: "/dashboard/country-services", icon: "🧩" },
+  { label: "Payment Routing", href: "/dashboard/payment-routing", icon: "🔀" },
+  { label: "Legal", href: "/dashboard/legal", icon: "📜" },
+  { label: "Insurance", href: "/dashboard/insurance", icon: "🧾" },
 ];
 
-export function Sidebar({ isOpen }: { isOpen: boolean }) {
+export default function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside
-      className={cn(
-        "fixed inset-y-0 left-0 z-40 w-72 border-r bg-white/95 backdrop-blur transition-transform duration-200 lg:translate-x-0",
-        isOpen ? "translate-x-0" : "-translate-x-full"
-      )}
-    >
-      <div className="flex h-16 items-center justify-between border-b px-6">
-        <div>
-          <p className="text-lg font-semibold text-slate-900">TowMech Admin</p>
-          <p className="text-xs text-muted-foreground">Control center</p>
-        </div>
+    <aside className="w-[260px] border-r bg-white h-screen sticky top-0 overflow-y-auto">
+      <div className="p-4">
+        <div className="text-lg font-semibold">TowMech Admin</div>
+        <div className="text-sm text-gray-500">Dashboard</div>
       </div>
 
-      <nav className="flex h-[calc(100%-4rem)] flex-col gap-1 overflow-y-auto px-4 py-6">
-        {navItems.map((item) => {
-          const active = pathname === item.href;
-          const Icon = item.icon;
+      <nav className="px-2 pb-6">
+        <ul className="space-y-1">
+          {navItems.map((item) => {
+            const active =
+              pathname === item.href ||
+              (item.href !== "/dashboard" && pathname?.startsWith(item.href));
 
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100",
-                active && "bg-slate-900 text-white hover:bg-slate-900"
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {item.label}
-            </Link>
-          );
-        })}
+            return (
+              <li key={item.href}>
+                <Link
+                  href={item.href}
+                  className={[
+                    "flex items-center gap-3 rounded-lg px-3 py-2 text-sm",
+                    active
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-700 hover:bg-slate-100",
+                  ].join(" ")}
+                >
+                  <span className="w-5 text-center">{item.icon}</span>
+                  <span>{item.label}</span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
       </nav>
     </aside>
   );
