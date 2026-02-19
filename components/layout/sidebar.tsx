@@ -17,13 +17,14 @@ const navItems = [
   { label: "Zones", href: "/dashboard/zones", icon: "📍" },
   { label: "Support", href: "/dashboard/support", icon: "🎧" },
 
-  // ✅ add/keep these (critical)
   { label: "Chats", href: "/dashboard/chats", icon: "💬" },
   { label: "Notifications", href: "/dashboard/notifications", icon: "🔔" },
   { label: "Safety & Security", href: "/dashboard/safety", icon: "🛡️" },
   { label: "Roles & Permissions", href: "/dashboard/roles", icon: "🔐" },
 
-  { label: "System Settings", href: "/dashboard/system-settings", icon: "⚙️" },
+  // ✅ fixed to match admin-nav + your settings page
+  { label: "System Settings", href: "/dashboard/settings", icon: "⚙️" },
+
   { label: "Countries", href: "/dashboard/countries", icon: "🌍" },
   { label: "Country Services", href: "/dashboard/country-services", icon: "🧩" },
   { label: "Payment Routing", href: "/dashboard/payment-routing", icon: "🔀" },

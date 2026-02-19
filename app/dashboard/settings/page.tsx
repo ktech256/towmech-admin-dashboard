@@ -285,25 +285,24 @@ export default function SettingsPage() {
           </CardHeader>
 
           <CardContent className="space-y-5">
-            {/* ✅ Payment Gateway */}
-            <div className="space-y-2">
+            {/* ✅ Payment Gateway (LEGACY) */}
+            <div className="rounded-md border p-4 space-y-3">
               <div className="flex items-center gap-2 text-sm font-medium">
-                Payment Gateway
-                <Badge variant="secondary">Active</Badge>
+                Payment Gateway (Legacy)
+                <Badge variant="secondary">Legacy</Badge>
+                <Badge variant="outline">Read-only</Badge>
               </div>
 
+              <p className="text-xs text-muted-foreground">
+                Payment routing is now controlled by the <b>Payment Routing</b> page per country.
+                This legacy setting is kept only for backward compatibility and will not be used for routing.
+              </p>
+
               <select
-                className="w-full rounded-md border px-3 py-2 text-sm"
+                className="w-full rounded-md border px-3 py-2 text-sm opacity-70"
                 value={settings.integrations.paymentGateway}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    integrations: {
-                      ...settings.integrations,
-                      paymentGateway: e.target.value,
-                    },
-                  })
-                }
+                disabled
+                onChange={() => {}}
               >
                 {PAYMENT_GATEWAYS.map((g) => (
                   <option key={g.value} value={g.value}>
@@ -311,49 +310,28 @@ export default function SettingsPage() {
                   </option>
                 ))}
               </select>
+
+              <Input
+                placeholder="Payment Public Key"
+                value={settings.integrations.paymentPublicKey || ""}
+                disabled
+                onChange={() => {}}
+              />
+
+              <Input
+                placeholder="Payment Secret Key (backend only)"
+                value={settings.integrations.paymentSecretKey || ""}
+                disabled
+                onChange={() => {}}
+              />
+
+              <Input
+                placeholder="Webhook Secret (optional)"
+                value={settings.integrations.paymentWebhookSecret || ""}
+                disabled
+                onChange={() => {}}
+              />
             </div>
-
-            <Input
-              placeholder="Payment Public Key"
-              value={settings.integrations.paymentPublicKey || ""}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  integrations: {
-                    ...settings.integrations,
-                    paymentPublicKey: e.target.value,
-                  },
-                })
-              }
-            />
-
-            <Input
-              placeholder="Payment Secret Key (backend only)"
-              value={settings.integrations.paymentSecretKey || ""}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  integrations: {
-                    ...settings.integrations,
-                    paymentSecretKey: e.target.value,
-                  },
-                })
-              }
-            />
-
-            <Input
-              placeholder="Webhook Secret (optional)"
-              value={settings.integrations.paymentWebhookSecret || ""}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  integrations: {
-                    ...settings.integrations,
-                    paymentWebhookSecret: e.target.value,
-                  },
-                })
-              }
-            />
 
             <Input
               placeholder="Google Maps Key (Android app will fetch this)"
@@ -397,10 +375,14 @@ export default function SettingsPage() {
               }
             />
 
-            {/* ✅ iKhokha Keys */}
+            {/* ✅ iKhokha Keys (Legacy integrations bucket - keep for now) */}
             <div className="rounded-md border p-4 space-y-3">
               <p className="text-sm font-medium text-slate-800">
-                iKhokha Keys (only if using iKhokha)
+                iKhokha Keys (legacy integrations bucket)
+              </p>
+              <p className="text-xs text-muted-foreground">
+                If you still use these fields, keep them. Phase 1 routing will move all payment configs
+                into the Payment Routing page per country.
               </p>
 
               <Input

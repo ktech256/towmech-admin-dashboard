@@ -10,31 +10,48 @@ type Country = {
   isActive: boolean;
 };
 
-type PaymentProviderKey = "PAYSTACK" | "MPESA" | "FLUTTERWAVE" | "PAYFAST" | "IKHOKHA";
+type PaymentFlowType = "SDK" | "REDIRECT";
 
-type ProviderConfig = {
+type GatewayEnum =
+  | "PAYSTACK"
+  | "MPESA"
+  | "FLUTTERWAVE"
+  | "PAYFAST"
+  | "IKHOKHA"
+  | "STRIPE"
+  | "PAYPAL"
+  | "GOOGLE_PAY"
+  | "APPLE_PAY"
+  | "ADYEN";
+
+type ProviderArrayItem = {
+  gateway: GatewayEnum;
+  flowType: PaymentFlowType;
   enabled: boolean;
-  publicKey?: string;
-  secretKey?: string;
-  webhookSecret?: string;
+  priority?: number;
 
-  // mpesa
-  consumerKey?: string;
-  consumerSecret?: string;
-  passkey?: string;
-  shortcode?: string;
+  // ✅ Phase 2 buckets (public only)
+  sdkConfig?: Record<string, any>;
+  redirectConfig?: Record<string, any>;
 
-  // generic extra
-  extra?: Record<string, any>;
+  // ✅ legacy/back-compat (safe bucket)
+  config?: Record<string, any>;
 };
 
-type PaymentRoutingConfig = {
-  _id: string;
+type PaymentRoutingConfigApi = {
   countryCode: string;
-  defaultProvider: PaymentProviderKey;
-  providers: Record<PaymentProviderKey, ProviderConfig>;
+  defaultProvider: string;
+  providers: any;
   updatedAt?: string;
   createdAt?: string;
+};
+
+type UiProvider = {
+  gateway: GatewayEnum;
+  label: string;
+  supportsSdk: boolean;
+  supportsRedirect: boolean;
+  section: "SDK" | "REDIRECT" | "BOTH";
 };
 
 const API_BASE =
@@ -43,8 +60,7 @@ const API_BASE =
   "http://localhost:5000";
 
 function authHeaders(extra: Record<string, string> = {}) {
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
   return {
     "Content-Type": "application/json",
@@ -53,32 +69,158 @@ function authHeaders(extra: Record<string, string> = {}) {
   };
 }
 
-const PROVIDERS: { key: PaymentProviderKey; label: string }[] = [
-  { key: "PAYSTACK", label: "Paystack" },
-  { key: "MPESA", label: "M-Pesa (Kenya)" },
-  { key: "FLUTTERWAVE", label: "Flutterwave" },
-  { key: "PAYFAST", label: "PayFast (ZA)" },
-  { key: "IKHOKHA", label: "iKhokha (ZA)" },
+const PROVIDERS: UiProvider[] = [
+  // Redirect providers (commonly webview/external)
+  { gateway: "PAYFAST", label: "PayFast (ZA)", supportsSdk: false, supportsRedirect: true, section: "REDIRECT" },
+  { gateway: "IKHOKHA", label: "iKhokha (ZA)", supportsSdk: false, supportsRedirect: true, section: "REDIRECT" },
+  { gateway: "FLUTTERWAVE", label: "Flutterwave", supportsSdk: false, supportsRedirect: true, section: "REDIRECT" },
+
+  // Dual mode
+  { gateway: "PAYSTACK", label: "Paystack", supportsSdk: true, supportsRedirect: true, section: "BOTH" },
+  { gateway: "MPESA", label: "M-Pesa (Kenya)", supportsSdk: true, supportsRedirect: true, section: "BOTH" },
+  { gateway: "STRIPE", label: "Stripe (PaymentSheet/Checkout)", supportsSdk: true, supportsRedirect: true, section: "BOTH" },
+  { gateway: "PAYPAL", label: "PayPal (Orders create/capture)", supportsSdk: true, supportsRedirect: true, section: "BOTH" },
+  { gateway: "ADYEN", label: "Adyen (Drop-in/Sessions)", supportsSdk: true, supportsRedirect: true, section: "BOTH" },
+
+  // SDK-only
+  { gateway: "GOOGLE_PAY", label: "Google Pay", supportsSdk: true, supportsRedirect: false, section: "SDK" },
+  { gateway: "APPLE_PAY", label: "Apple Pay", supportsSdk: true, supportsRedirect: false, section: "SDK" },
 ];
 
-function emptyConfig(countryCode: string): PaymentRoutingConfig {
+function normalizeGatewayEnum(input: any): GatewayEnum {
+  const raw = String(input || "").trim().toUpperCase();
+  const known = new Set(PROVIDERS.map((p) => p.gateway));
+
+  if (raw === "I_KHOKHA" || raw === "I-KHOKHA") return "IKHOKHA";
+  if (raw === "M_PESA" || raw === "M-PESA") return "MPESA";
+
+  if (known.has(raw as GatewayEnum)) return raw as GatewayEnum;
+
+  // safe fallback
+  return "PAYSTACK";
+}
+
+function normalizeFlowType(input: any): PaymentFlowType {
+  const raw = String(input || "").trim().toUpperCase();
+  return raw === "SDK" ? "SDK" : "REDIRECT";
+}
+
+function normalizeObj(v: any): Record<string, any> {
+  return v && typeof v === "object" ? v : {};
+}
+
+function normalizePriority(v: any): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function buildDefaultProvidersArray(): ProviderArrayItem[] {
+  return PROVIDERS.map((p) => ({
+    gateway: p.gateway,
+    flowType: p.supportsRedirect ? "REDIRECT" : "SDK",
+    enabled: false,
+    priority: 0,
+    sdkConfig: {},
+    redirectConfig: {},
+    config: {},
+  }));
+}
+
+/**
+ * Convert backend config to providers[] model (supports legacy shapes too).
+ */
+function normalizeConfigFromApi(countryCode: string, apiCfg: PaymentRoutingConfigApi | null) {
+  const baseline = buildDefaultProvidersArray();
+
+  if (!apiCfg) {
+    return {
+      countryCode,
+      defaultProvider: "PAYSTACK" as GatewayEnum,
+      providers: baseline,
+    };
+  }
+
+  const defaultProvider = normalizeGatewayEnum(apiCfg.defaultProvider || "PAYSTACK");
+  const providersAny = apiCfg.providers;
+
+  // ✅ NEW: array
+  if (Array.isArray(providersAny)) {
+    const fromApi: ProviderArrayItem[] = providersAny
+      .filter(Boolean)
+      .map((p: any) => ({
+        gateway: normalizeGatewayEnum(p.gateway),
+        flowType: normalizeFlowType(p.flowType),
+        enabled: !!p.enabled,
+        priority: normalizePriority(p.priority),
+        sdkConfig: normalizeObj(p.sdkConfig),
+        redirectConfig: normalizeObj(p.redirectConfig),
+        config: normalizeObj(p.config),
+      }));
+
+    const merged = baseline.map((b) => {
+      const hit = fromApi.find((x) => x.gateway === b.gateway);
+      return hit ? { ...b, ...hit } : b;
+    });
+
+    return {
+      countryCode,
+      defaultProvider,
+      providers: merged,
+      updatedAt: apiCfg.updatedAt,
+      createdAt: apiCfg.createdAt,
+    };
+  }
+
+  // ✅ LEGACY: object keyed
+  if (providersAny && typeof providersAny === "object") {
+    const fromLegacy: ProviderArrayItem[] = Object.entries(providersAny as Record<string, any>).map(
+      ([k, v]) => ({
+        gateway: normalizeGatewayEnum(k),
+        flowType: "REDIRECT",
+        enabled: !!(v as any)?.enabled,
+        priority: normalizePriority((v as any)?.priority),
+        sdkConfig: normalizeObj((v as any)?.sdkConfig),
+        redirectConfig: normalizeObj((v as any)?.redirectConfig),
+        config: normalizeObj((v as any)?.config),
+      })
+    );
+
+    const merged = baseline.map((b) => {
+      const hit = fromLegacy.find((x) => x.gateway === b.gateway);
+      return hit ? { ...b, ...hit } : b;
+    });
+
+    return {
+      countryCode,
+      defaultProvider,
+      providers: merged,
+      updatedAt: apiCfg.updatedAt,
+      createdAt: apiCfg.createdAt,
+    };
+  }
+
   return {
-    _id: "local",
     countryCode,
-    defaultProvider: "PAYSTACK",
-    providers: {
-      PAYSTACK: { enabled: false, publicKey: "", secretKey: "", webhookSecret: "" },
-      MPESA: {
-        enabled: false,
-        consumerKey: "",
-        consumerSecret: "",
-        passkey: "",
-        shortcode: "",
-      },
-      FLUTTERWAVE: { enabled: false, publicKey: "", secretKey: "", webhookSecret: "" },
-      PAYFAST: { enabled: false, publicKey: "", secretKey: "", webhookSecret: "" },
-      IKHOKHA: { enabled: false, publicKey: "", secretKey: "", webhookSecret: "" },
-    },
+    defaultProvider,
+    providers: baseline,
+    updatedAt: apiCfg.updatedAt,
+    createdAt: apiCfg.createdAt,
+  };
+}
+
+function buildPayloadForSave(countryCode: string, defaultProvider: GatewayEnum, providers: ProviderArrayItem[]) {
+  return {
+    countryCode,
+    defaultProvider,
+    providers: providers.map((p) => ({
+      gateway: p.gateway,
+      flowType: p.flowType,
+      enabled: !!p.enabled,
+      priority: normalizePriority(p.priority),
+      sdkConfig: normalizeObj(p.sdkConfig),
+      redirectConfig: normalizeObj(p.redirectConfig),
+      config: normalizeObj(p.config), // keep legacy bucket too (safe)
+    })),
   };
 }
 
@@ -90,7 +232,8 @@ export default function PaymentRoutingPage() {
   const [countries, setCountries] = useState<Country[]>([]);
   const [selectedCountryCode, setSelectedCountryCode] = useState<string>("");
 
-  const [config, setConfig] = useState<PaymentRoutingConfig | null>(null);
+  const [defaultProvider, setDefaultProvider] = useState<GatewayEnum>("PAYSTACK");
+  const [providers, setProviders] = useState<ProviderArrayItem[]>(buildDefaultProvidersArray());
 
   const selectedCountry = useMemo(() => {
     return countries.find((c) => c.code === selectedCountryCode) || null;
@@ -123,27 +266,13 @@ export default function PaymentRoutingPage() {
     });
 
     const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.message || "Failed to load payment routing config");
 
-    if (!res.ok) {
-      throw new Error(data?.message || "Failed to load payment routing config");
-    }
+    const apiCfg: PaymentRoutingConfigApi | null = data?.config || null;
+    const normalized = normalizeConfigFromApi(countryCode, apiCfg);
 
-    const cfg: PaymentRoutingConfig | null = data?.config || null;
-    if (!cfg) {
-      setConfig(emptyConfig(countryCode));
-      return;
-    }
-
-    // normalize providers object
-    const merged = emptyConfig(countryCode);
-    setConfig({
-      ...merged,
-      ...cfg,
-      providers: {
-        ...merged.providers,
-        ...(cfg.providers || {}),
-      },
-    });
+    setDefaultProvider(normalized.defaultProvider);
+    setProviders(normalized.providers);
   }
 
   async function init() {
@@ -174,45 +303,47 @@ export default function PaymentRoutingPage() {
       .finally(() => setLoading(false));
   }, [selectedCountryCode]);
 
-  function updateProvider(
-    key: PaymentProviderKey,
-    patch: Partial<ProviderConfig>
-  ) {
-    setConfig((prev) => {
-      const base = prev || emptyConfig(selectedCountryCode);
-      return {
-        ...base,
-        providers: {
-          ...base.providers,
-          [key]: {
-            ...(base.providers?.[key] || { enabled: false }),
-            ...patch,
-          },
-        },
-      };
-    });
+  function updateProvider(gateway: GatewayEnum, patch: Partial<ProviderArrayItem>) {
+    setProviders((prev) => prev.map((p) => (p.gateway === gateway ? { ...p, ...patch } : p)));
+  }
+
+  function updateProviderSdkConfig(gateway: GatewayEnum, patch: Record<string, any>) {
+    setProviders((prev) =>
+      prev.map((p) => (p.gateway === gateway ? { ...p, sdkConfig: { ...(p.sdkConfig || {}), ...patch } } : p))
+    );
+  }
+
+  function updateProviderRedirectConfig(gateway: GatewayEnum, patch: Record<string, any>) {
+    setProviders((prev) =>
+      prev.map((p) =>
+        p.gateway === gateway ? { ...p, redirectConfig: { ...(p.redirectConfig || {}), ...patch } } : p
+      )
+    );
   }
 
   async function save() {
-    if (!selectedCountryCode || !config) return;
+    if (!selectedCountryCode) return;
 
     setSaving(true);
     setError(null);
 
     try {
-      // validate default provider enabled
-      const defaultEnabled = config.providers?.[config.defaultProvider]?.enabled;
-      if (!defaultEnabled) {
-        throw new Error(
-          `Default provider (${config.defaultProvider}) must be enabled`
-        );
+      const catalog = new Map(PROVIDERS.map((p) => [p.gateway, p]));
+
+      const def = providers.find((p) => p.gateway === defaultProvider);
+      if (!def || !def.enabled) {
+        throw new Error(`Default provider (${defaultProvider}) must be enabled`);
       }
 
-      const payload = {
-        countryCode: selectedCountryCode,
-        defaultProvider: config.defaultProvider,
-        providers: config.providers,
-      };
+      for (const p of providers) {
+        const meta = catalog.get(p.gateway);
+        if (!meta) continue;
+
+        if (p.flowType === "SDK" && !meta.supportsSdk) throw new Error(`${p.gateway} cannot be set to SDK flow.`);
+        if (p.flowType === "REDIRECT" && !meta.supportsRedirect) throw new Error(`${p.gateway} cannot be set to REDIRECT flow.`);
+      }
+
+      const payload = buildPayloadForSave(selectedCountryCode, defaultProvider, providers);
 
       const res = await fetch(`${API_BASE}/api/admin/payment-routing`, {
         method: "PUT",
@@ -231,14 +362,15 @@ export default function PaymentRoutingPage() {
     }
   }
 
+  const dualGateways = PROVIDERS.filter((p) => p.section === "BOTH");
+  const sdkOnlyGateways = PROVIDERS.filter((p) => p.section === "SDK");
+  const redirectOnlyGateways = PROVIDERS.filter((p) => p.section === "REDIRECT");
+
   return (
     <div style={{ padding: 20, maxWidth: 1200 }}>
-      <h1 style={{ fontSize: 24, fontWeight: 800, marginBottom: 8 }}>
-        Payment Routing
-      </h1>
+      <h1 style={{ fontSize: 24, fontWeight: 800, marginBottom: 8 }}>Payment Routing</h1>
       <p style={{ opacity: 0.8, marginBottom: 18 }}>
-        Configure payment providers per country (enable/disable + keys). Backend
-        will route payments using these settings.
+        Configure gateways per country. Backend will route payments using these settings (SDK or REDIRECT).
       </p>
 
       {error ? (
@@ -287,17 +419,10 @@ export default function PaymentRoutingPage() {
           </div>
 
           <div style={{ minWidth: 260 }}>
-            <label style={{ fontSize: 12, opacity: 0.8 }}>
-              Default provider
-            </label>
+            <label style={{ fontSize: 12, opacity: 0.8 }}>Default provider</label>
             <select
-              value={config?.defaultProvider || "PAYSTACK"}
-              onChange={(e) =>
-                setConfig((prev) => ({
-                  ...(prev || emptyConfig(selectedCountryCode)),
-                  defaultProvider: e.target.value as PaymentProviderKey,
-                }))
-              }
+              value={defaultProvider}
+              onChange={(e) => setDefaultProvider(normalizeGatewayEnum(e.target.value))}
               style={{
                 width: "100%",
                 padding: 10,
@@ -307,7 +432,7 @@ export default function PaymentRoutingPage() {
               disabled={loading}
             >
               {PROVIDERS.map((p) => (
-                <option key={p.key} value={p.key}>
+                <option key={p.gateway} value={p.gateway}>
                   {p.label}
                 </option>
               ))}
@@ -354,135 +479,236 @@ export default function PaymentRoutingPage() {
         ) : null}
       </div>
 
-      <div
-        style={{
-          border: "1px solid #e5e7eb",
-          borderRadius: 12,
-          padding: 16,
-          background: "white",
-        }}
-      >
-        {loading ? (
-          <div style={{ padding: 14, opacity: 0.7 }}>Loading config...</div>
-        ) : !config ? (
-          <div style={{ padding: 14, opacity: 0.7 }}>No config loaded.</div>
-        ) : (
-          <div style={{ display: "grid", gap: 14 }}>
-            {PROVIDERS.map((p) => {
-              const cfg = config.providers?.[p.key] || { enabled: false };
+      <Section title="Dual-Mode Gateways" description="Gateways that can run as SDK or Redirect (recommended).">
+        <ProviderList
+          providersMeta={dualGateways}
+          providersState={providers}
+          defaultProvider={defaultProvider}
+          onUpdate={updateProvider}
+          onUpdateSdkConfig={updateProviderSdkConfig}
+          onUpdateRedirectConfig={updateProviderRedirectConfig}
+        />
+      </Section>
 
-              return (
-                <div
-                  key={p.key}
-                  style={{
-                    border: "1px solid #e5e7eb",
-                    borderRadius: 12,
-                    padding: 14,
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 10,
-                      alignItems: "center",
-                      flexWrap: "wrap",
-                      marginBottom: 10,
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 900 }}>{p.label}</div>
-                      <div style={{ fontSize: 13, opacity: 0.7 }}>
-                        Provider key: <b>{p.key}</b>
-                      </div>
-                    </div>
+      <div style={{ height: 16 }} />
 
-                    <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                      <span style={{ fontSize: 12, opacity: 0.7 }}>
-                        {cfg.enabled ? "ENABLED" : "DISABLED"}
-                      </span>
-                      <input
-                        type="checkbox"
-                        checked={!!cfg.enabled}
-                        onChange={(e) =>
-                          updateProvider(p.key, { enabled: e.target.checked })
-                        }
-                        style={{ width: 20, height: 20 }}
-                      />
-                    </label>
-                  </div>
+      <Section title="SDK-Only Gateways" description="Gateways that only run inside the app (SDK).">
+        <ProviderList
+          providersMeta={sdkOnlyGateways}
+          providersState={providers}
+          defaultProvider={defaultProvider}
+          onUpdate={updateProvider}
+          onUpdateSdkConfig={updateProviderSdkConfig}
+          onUpdateRedirectConfig={updateProviderRedirectConfig}
+        />
+      </Section>
 
-                  {/* Fields */}
-                  {p.key === "MPESA" ? (
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                        gap: 12,
-                      }}
-                    >
-                      <Input
-                        label="Consumer Key"
-                        value={cfg.consumerKey || ""}
-                        onChange={(v) => updateProvider("MPESA", { consumerKey: v })}
-                      />
-                      <Input
-                        label="Consumer Secret"
-                        value={cfg.consumerSecret || ""}
-                        onChange={(v) =>
-                          updateProvider("MPESA", { consumerSecret: v })
-                        }
-                      />
-                      <Input
-                        label="Passkey"
-                        value={cfg.passkey || ""}
-                        onChange={(v) => updateProvider("MPESA", { passkey: v })}
-                      />
-                      <Input
-                        label="Shortcode"
-                        value={cfg.shortcode || ""}
-                        onChange={(v) => updateProvider("MPESA", { shortcode: v })}
-                      />
-                    </div>
-                  ) : (
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-                        gap: 12,
-                      }}
-                    >
-                      <Input
-                        label="Public Key"
-                        value={cfg.publicKey || ""}
-                        onChange={(v) => updateProvider(p.key, { publicKey: v })}
-                      />
-                      <Input
-                        label="Secret Key"
-                        value={cfg.secretKey || ""}
-                        onChange={(v) => updateProvider(p.key, { secretKey: v })}
-                      />
-                      <Input
-                        label="Webhook Secret"
-                        value={cfg.webhookSecret || ""}
-                        onChange={(v) =>
-                          updateProvider(p.key, { webhookSecret: v })
-                        }
-                      />
-                    </div>
-                  )}
+      <div style={{ height: 16 }} />
 
-                  {config.defaultProvider === p.key ? (
-                    <div style={{ marginTop: 10, fontSize: 12, opacity: 0.8 }}>
-                      ⭐ This provider is set as <b>DEFAULT</b> for this country.
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        )}
+      <Section title="Redirect-Only Gateways" description="Gateways that only redirect to hosted pages.">
+        <ProviderList
+          providersMeta={redirectOnlyGateways}
+          providersState={providers}
+          defaultProvider={defaultProvider}
+          onUpdate={updateProvider}
+          onUpdateSdkConfig={updateProviderSdkConfig}
+          onUpdateRedirectConfig={updateProviderRedirectConfig}
+        />
+      </Section>
+    </div>
+  );
+}
+
+function Section({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        border: "1px solid #e5e7eb",
+        borderRadius: 12,
+        padding: 16,
+        background: "white",
+      }}
+    >
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 16, fontWeight: 900 }}>{title}</div>
+        <div style={{ fontSize: 13, opacity: 0.75 }}>{description}</div>
       </div>
+      {children}
+    </div>
+  );
+}
+
+function ProviderList({
+  providersMeta,
+  providersState,
+  defaultProvider,
+  onUpdate,
+  onUpdateSdkConfig,
+  onUpdateRedirectConfig,
+}: {
+  providersMeta: UiProvider[];
+  providersState: ProviderArrayItem[];
+  defaultProvider: GatewayEnum;
+  onUpdate: (gateway: GatewayEnum, patch: Partial<ProviderArrayItem>) => void;
+  onUpdateSdkConfig: (gateway: GatewayEnum, patch: Record<string, any>) => void;
+  onUpdateRedirectConfig: (gateway: GatewayEnum, patch: Record<string, any>) => void;
+}) {
+  return (
+    <div style={{ display: "grid", gap: 14 }}>
+      {providersMeta.map((meta) => {
+        const p =
+          providersState.find((x) => x.gateway === meta.gateway) ||
+          ({
+            gateway: meta.gateway,
+            flowType: meta.supportsRedirect ? "REDIRECT" : "SDK",
+            enabled: false,
+            priority: 0,
+            sdkConfig: {},
+            redirectConfig: {},
+            config: {},
+          } as ProviderArrayItem);
+
+        const isDefault = defaultProvider === meta.gateway;
+
+        return (
+          <div
+            key={meta.gateway}
+            style={{
+              border: "1px solid #e5e7eb",
+              borderRadius: 12,
+              padding: 14,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 10,
+                alignItems: "center",
+                flexWrap: "wrap",
+                marginBottom: 10,
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 900 }}>{meta.label}</div>
+                <div style={{ fontSize: 13, opacity: 0.7 }}>
+                  Gateway enum: <b>{meta.gateway}</b>
+                </div>
+              </div>
+
+              <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <span style={{ fontSize: 12, opacity: 0.7 }}>{p.enabled ? "ENABLED" : "DISABLED"}</span>
+                <input
+                  type="checkbox"
+                  checked={!!p.enabled}
+                  onChange={(e) => onUpdate(meta.gateway, { enabled: e.target.checked })}
+                  style={{ width: 20, height: 20 }}
+                />
+              </label>
+            </div>
+
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+              <div style={{ minWidth: 240 }}>
+                <label style={{ fontSize: 12, opacity: 0.75 }}>Flow Type</label>
+                <select
+                  value={p.flowType}
+                  onChange={(e) => onUpdate(meta.gateway, { flowType: normalizeFlowType(e.target.value) })}
+                  style={{
+                    width: "100%",
+                    padding: 10,
+                    borderRadius: 10,
+                    border: "1px solid #d1d5db",
+                  }}
+                  disabled={!p.enabled}
+                >
+                  <option value="REDIRECT" disabled={!meta.supportsRedirect}>
+                    REDIRECT (WebView / Hosted)
+                  </option>
+                  <option value="SDK" disabled={!meta.supportsSdk}>
+                    SDK (In-app)
+                  </option>
+                </select>
+              </div>
+
+              <div style={{ minWidth: 160 }}>
+                <label style={{ fontSize: 12, opacity: 0.75 }}>Priority</label>
+                <input
+                  type="number"
+                  value={String(p.priority ?? 0)}
+                  onChange={(e) => onUpdate(meta.gateway, { priority: Number(e.target.value) })}
+                  disabled={!p.enabled}
+                  style={{
+                    width: "100%",
+                    padding: 10,
+                    borderRadius: 10,
+                    border: "1px solid #d1d5db",
+                    background: !p.enabled ? "#f9fafb" : "white",
+                    opacity: !p.enabled ? 0.7 : 1,
+                  }}
+                />
+              </div>
+
+              {isDefault ? (
+                <div style={{ fontSize: 12, opacity: 0.8, alignSelf: "flex-end" }}>
+                  ⭐ This provider is set as <b>DEFAULT</b> for this country.
+                </div>
+              ) : null}
+            </div>
+
+            {p.flowType === "SDK" ? (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
+                <Input
+                  label="SDK Public Key"
+                  value={String(p.sdkConfig?.publicKey || "")}
+                  onChange={(v) => onUpdateSdkConfig(meta.gateway, { publicKey: v })}
+                  disabled={!p.enabled}
+                />
+                <Input
+                  label="Merchant / Account ID"
+                  value={String(p.sdkConfig?.merchantId || "")}
+                  onChange={(v) => onUpdateSdkConfig(meta.gateway, { merchantId: v })}
+                  disabled={!p.enabled}
+                />
+                <Input
+                  label="Environment (test/live)"
+                  value={String(p.sdkConfig?.environment || "")}
+                  onChange={(v) => onUpdateSdkConfig(meta.gateway, { environment: v })}
+                  disabled={!p.enabled}
+                />
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
+                <Input
+                  label="Redirect Return URL (optional)"
+                  value={String(p.redirectConfig?.returnUrl || "")}
+                  onChange={(v) => onUpdateRedirectConfig(meta.gateway, { returnUrl: v })}
+                  disabled={!p.enabled}
+                />
+                <Input
+                  label="Cancel URL (optional)"
+                  value={String(p.redirectConfig?.cancelUrl || "")}
+                  onChange={(v) => onUpdateRedirectConfig(meta.gateway, { cancelUrl: v })}
+                  disabled={!p.enabled}
+                />
+                <Input
+                  label="Webhook Secret (display-only)"
+                  value={String(p.redirectConfig?.webhookSecret || "")}
+                  onChange={(v) => onUpdateRedirectConfig(meta.gateway, { webhookSecret: v })}
+                  disabled={!p.enabled}
+                />
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -491,10 +717,12 @@ function Input({
   label,
   value,
   onChange,
+  disabled,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
+  disabled?: boolean;
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -502,11 +730,14 @@ function Input({
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
         style={{
           padding: 10,
           borderRadius: 10,
           border: "1px solid #d1d5db",
           width: "100%",
+          background: disabled ? "#f9fafb" : "white",
+          opacity: disabled ? 0.7 : 1,
         }}
       />
     </div>

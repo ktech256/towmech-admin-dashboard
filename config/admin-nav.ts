@@ -49,7 +49,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     permissionKey: "canViewAnalytics",
   },
 
-  // Live Map (✅ NEW PERMISSION KEY)
+  // Live Map
   {
     name: "Live Map",
     href: "/dashboard/live-map",
@@ -58,38 +58,128 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   },
 
   // Users / Providers / Jobs
-  { name: "Users", href: "/dashboard/users", icon: Users, permissionKey: "canManageUsers" },
-  { name: "Providers", href: "/dashboard/providers", icon: Truck, permissionKey: "canVerifyProviders" },
-  { name: "Jobs", href: "/dashboard/jobs", icon: Briefcase, permissionKey: "canManageJobs" },
+  {
+    name: "Users",
+    href: "/dashboard/users",
+    icon: Users,
+    permissionKey: "canManageUsers",
+  },
+  {
+    name: "Providers",
+    href: "/dashboard/providers",
+    icon: Truck,
+    permissionKey: "canVerifyProviders",
+  },
+  {
+    name: "Jobs",
+    href: "/dashboard/jobs",
+    icon: Briefcase,
+    permissionKey: "canManageJobs",
+  },
 
   // Payments / Pricing
-  { name: "Payments", href: "/dashboard/payments", icon: CreditCard, permissionKey: "canApprovePayments" },
-  { name: "Pricing", href: "/dashboard/pricing", icon: DollarSign, permissionKey: "canManagePricing" },
-  { name: "Service Categories", href: "/dashboard/service-categories", icon: Tags, permissionKey: "canManageServiceCategories" },
+  {
+    name: "Payments",
+    href: "/dashboard/payments",
+    icon: CreditCard,
+    permissionKey: "canApprovePayments",
+  },
+  {
+    name: "Pricing",
+    href: "/dashboard/pricing",
+    icon: DollarSign,
+    permissionKey: "canManagePricing",
+  },
+  {
+    name: "Service Categories",
+    href: "/dashboard/service-categories",
+    icon: Tags,
+    permissionKey: "canManageServiceCategories",
+  },
 
   // Zones
-  { name: "Zones", href: "/dashboard/zones", icon: Map, permissionKey: "canManageZones" },
+  {
+    name: "Zones",
+    href: "/dashboard/zones",
+    icon: Map,
+    permissionKey: "canManageZones",
+  },
 
-  // Support (✅ now permission-controlled)
-  { name: "Support", href: "/dashboard/support", icon: LifeBuoy, permissionKey: "canViewSupport" },
+  // Support
+  {
+    name: "Support",
+    href: "/dashboard/support",
+    icon: LifeBuoy,
+    permissionKey: "canViewSupport",
+  },
 
   // Chats / Notifications
-  { name: "Chats", href: "/dashboard/chats", icon: MessageCircle, permissionKey: "canManageChats" },
-  { name: "Notifications", href: "/dashboard/notifications", icon: Bell, permissionKey: "canManageNotifications" },
+  {
+    name: "Chats",
+    href: "/dashboard/chats",
+    icon: MessageCircle,
+    permissionKey: "canManageChats",
+  },
+  {
+    name: "Notifications",
+    href: "/dashboard/notifications",
+    icon: Bell,
+    permissionKey: "canManageNotifications",
+  },
 
   // Safety & Security
-  { name: "Safety & Security", href: "/dashboard/safety", icon: Shield, permissionKey: "canManageSafety" },
+  {
+    name: "Safety & Security",
+    href: "/dashboard/safety",
+    icon: Shield,
+    permissionKey: "canManageSafety",
+  },
 
   // Roles & Permissions
-  { name: "Roles & Permissions", href: "/dashboard/roles", icon: UserCog, permissionKey: "canManageRoles" },
+  {
+    name: "Roles & Permissions",
+    href: "/dashboard/roles",
+    icon: UserCog,
+    permissionKey: "canManageRoles",
+  },
 
-  // System Settings
-  { name: "System Settings", href: "/dashboard/settings", icon: Settings, permissionKey: "canManageSettings" },
+  // System Settings (✅ ensure route is /dashboard/settings everywhere)
+  {
+    name: "System Settings",
+    href: "/dashboard/settings",
+    icon: Settings,
+    permissionKey: "canManageSettings",
+  },
 
   // Global/country configs
-  { name: "Countries", href: "/dashboard/countries", icon: Globe, permissionKey: "canManageCountries" },
-  { name: "Country Services", href: "/dashboard/country-services", icon: Globe, permissionKey: "canManageCountryServices" },
-  { name: "Payment Routing", href: "/dashboard/payment-routing", icon: CreditCard, permissionKey: "canManagePaymentRouting" },
-  { name: "Legal", href: "/dashboard/legal", icon: Globe, permissionKey: "canManageLegal" },
-  { name: "Insurance", href: "/dashboard/insurance", icon: Globe, permissionKey: "canManageInsurance" },
+  {
+    name: "Countries",
+    href: "/dashboard/countries",
+    icon: Globe,
+    permissionKey: "canManageCountries",
+  },
+  {
+    name: "Country Services",
+    href: "/dashboard/country-services",
+    icon: Globe,
+    permissionKey: "canManageCountryServices",
+  },
+  {
+    name: "Payment Routing",
+    href: "/dashboard/payment-routing",
+    icon: CreditCard,
+    permissionKey: "canManagePaymentRouting",
+  },
+  {
+    name: "Legal",
+    href: "/dashboard/legal",
+    icon: Globe,
+    permissionKey: "canManageLegal",
+  },
+  {
+    name: "Insurance",
+    href: "/dashboard/insurance",
+    icon: Globe,
+    permissionKey: "canManageInsurance",
+  },
 ];
