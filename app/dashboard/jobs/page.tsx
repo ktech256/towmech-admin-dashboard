@@ -35,6 +35,12 @@ type Job = {
   estimatedFare?: number;
   createdAt?: string;
 
+  insurance?: {
+    enabled?: boolean;
+    code?: string;
+    partnerId?: string;
+  };
+
   customer?: {
     name?: string;
     email?: string;
@@ -168,6 +174,7 @@ export default function JobsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Job ID</TableHead>
+                    <TableHead>Type</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Customer</TableHead>
                     <TableHead>Provider</TableHead>
@@ -181,7 +188,7 @@ export default function JobsPage() {
                   {filteredJobs.length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={7}
+                        colSpan={8}
                         className="text-center py-8 text-sm text-muted-foreground"
                       >
                         No jobs found ✅
@@ -192,6 +199,13 @@ export default function JobsPage() {
                       <TableRow key={job._id}>
                         <TableCell className="font-medium">
                           {job._id?.slice?.(-8) || job._id}
+                        </TableCell>
+                        <TableCell>
+                          {job.insurance?.enabled ? (
+                            <Badge className="bg-purple-600 text-white">INSURANCE</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-slate-600 border-slate-300">CASH</Badge>
+                          )}
                         </TableCell>
                         <TableCell>{getStatusBadge(job.status)}</TableCell>
                         <TableCell>{job.customer?.name || "—"}</TableCell>
@@ -251,6 +265,9 @@ export default function JobsPage() {
                   </div>
                   <div>
                     <b>Role Needed:</b> {selectedJob.roleNeeded}
+                  </div>
+                  <div>
+                    <b>Job Type:</b> {selectedJob.insurance?.enabled ? "INSURANCE" : "CASH"}
                   </div>
                   <div>
                     <b>Distance:</b> {selectedJob.distance ?? "—"} km

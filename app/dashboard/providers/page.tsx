@@ -42,9 +42,12 @@ type Provider = {
   role?: string;
   createdAt?: string;
   countryCode?: string;
+  rating?: number;
+  ratingCount?: number;
 
   providerProfile?: {
     verificationStatus?: string;
+    jobPreference?: string;
     rejectReason?: string | null; // optional if backend provides it
     rejectedReason?: string | null; // common alternate field
     rejectionReason?: string | null; // common alternate field
@@ -153,6 +156,7 @@ export default function ProvidersPage() {
         (p.name || "").toLowerCase().includes(s) ||
         (p.email || "").toLowerCase().includes(s) ||
         (p.role || "").toLowerCase().includes(s) ||
+        (p.providerProfile?.jobPreference || "").toLowerCase().includes(s) ||
         (p.providerProfile?.verificationStatus || "").toLowerCase().includes(s)
       );
     });
@@ -399,6 +403,8 @@ export default function ProvidersPage() {
                     <TableHead>Name</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Type</TableHead>
+                    <TableHead>Preference</TableHead>
+                    <TableHead>Rating</TableHead>
                     <TableHead>Verification</TableHead>
                     {tab === "rejected" ? <TableHead>Reject Reason</TableHead> : null}
                     <TableHead>Account</TableHead>
@@ -411,14 +417,14 @@ export default function ProvidersPage() {
                   {filteredProviders.length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={tab === "rejected" ? 8 : 7}
                         className="text-center py-8 text-sm text-muted-foreground"
-                      >
-                        No providers found ✅
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    filteredProviders.map((p) => {
+                      colSpan={tab === "rejected" ? 10 : 9}
+                    >
+                      No providers found ✅
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredProviders.map((p) => {
                       const st = p.accountStatus || {};
                       const busy = actionLoadingId === p._id;
                       const reason = getRejectReason(p);
@@ -430,6 +436,21 @@ export default function ProvidersPage() {
 
                           <TableCell>
                             <Badge variant="secondary">{normalizeRole(p.role)}</Badge>
+                          </TableCell>
+
+                          <TableCell>
+                            <Badge variant="outline" className="bg-slate-50">
+                              {p.providerProfile?.jobPreference || "BOTH"}
+                            </Badge>
+                          </TableCell>
+
+                          <TableCell>
+                            {typeof p.rating === "number" ? (
+                              <div className="flex items-center gap-1">
+                                <span className="font-bold text-yellow-600">★ {p.rating.toFixed(1)}</span>
+                                <span className="text-xs text-muted-foreground">({p.ratingCount || 0})</span>
+                              </div>
+                            ) : "—"}
                           </TableCell>
 
                           <TableCell>{verificationPill(p)}</TableCell>
