@@ -12,7 +12,7 @@ const navItems = [
   { label: "Providers", href: "/dashboard/providers", icon: "🚚" },
   { label: "Jobs", href: "/dashboard/jobs", icon: "🧾" },
   { label: "Payments", href: "/dashboard/payments", icon: "💳" },
-  { label: "Payouts (Insurance)", href: "/dashboard/payouts", icon: "💰" },
+  { label: "Provider Payouts", href: "/dashboard/payouts", icon: "💰" },
   { label: "Pricing", href: "/dashboard/pricing", icon: "🏷️" },
   { label: "Service Categories", href: "/dashboard/service-categories", icon: "🧰" },
   { label: "Zones", href: "/dashboard/zones", icon: "📍" },

@@ -73,13 +73,13 @@ export default function PayoutsPage() {
   return (
     <div className="space-y-6">
       <ModuleHeader
-        title="Weekly Payouts (Insurance)"
-        description="Review and process weekly earnings for insurance jobs."
+        title="Provider Payouts & Invoicing"
+        description="Manage provider earnings, process weekly payouts, and track SMS/Email notifications for insurance jobs."
       />
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Invoices</CardTitle>
+          <CardTitle className="text-base">Weekly Payout Invoices</CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
