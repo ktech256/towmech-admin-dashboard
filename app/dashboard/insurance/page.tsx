@@ -592,6 +592,53 @@ export default function InsurancePage() {
     }
   }
 
+  // Codes PDF download
+  async function onDownloadCodesPdf() {
+    if (!selectedCountryCode || !selectedPartnerId || !selectedPartner) return;
+
+    setSaving(true);
+    setError(null);
+
+    try {
+      const url = `${API_BASE}/api/admin/insurance/codes/pdf?countryCode=${encodeURIComponent(
+        selectedCountryCode
+      )}&partnerId=${encodeURIComponent(selectedPartnerId)}`;
+
+      const res = await fetch(url, { method: "GET", headers: authHeaders() });
+      if (res.ok) {
+        const blob = await res.blob();
+        triggerDownload(
+          blob,
+          `insurance-codes-${selectedCountryCode}-${
+            (selectedPartner as any)?.partnerCode || selectedPartnerId
+          }.pdf`
+        );
+        return;
+      }
+
+      const printable = buildCodesPrintHtml(
+        selectedPartner?.name || "Partner",
+        (selectedPartner as any)?.partnerCode || "",
+        selectedCountryCode,
+        currency,
+        groupedCodes,
+        normalizeCodeStatus,
+        codeUsedAmount
+      );
+      const w = window.open("", "_blank");
+      if (!w) throw new Error("Popup blocked. Allow popups to download Codes PDF.");
+      w.document.open();
+      w.document.write(printable);
+      w.document.close();
+      w.focus();
+      w.print();
+    } catch (e: any) {
+      setError(e?.message || "Codes PDF failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const partnerStatusLabel = (p: InsurancePartner) => {
     const isActive = Boolean((p as any).isActive);
     const isArchived = Boolean((p as any).isArchived);

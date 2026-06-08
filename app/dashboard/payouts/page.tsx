@@ -28,6 +28,7 @@ import { FileText, Download, Calendar } from "lucide-react";
 type Payout = {
   _id: string;
   provider?: {
+    _id: string;
     name: string;
     email: string;
     phone: string;

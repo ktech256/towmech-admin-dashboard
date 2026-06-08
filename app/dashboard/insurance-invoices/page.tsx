@@ -275,7 +275,7 @@ export default function InsuranceInvoicesPage() {
   }
 
   async function onDownloadPartnerPdf() {
-    if (!selectedCountryCode || !selectedPartnerId || !invoice) return;
+    if (!selectedCountryCode || !selectedPartnerId || !invoice || !selectedPartner) return;
     setBusy(true);
     try {
       const blob = await downloadPartnerInvoicePdf(commonPdfArgs());
@@ -284,7 +284,7 @@ export default function InsuranceInvoicesPage() {
   }
 
   async function onDownloadProvidersPdf() {
-    if (!selectedCountryCode || !selectedPartnerId || !invoice) return;
+    if (!selectedCountryCode || !selectedPartnerId || !invoice || !selectedPartner) return;
     setBusy(true);
     try {
       const blob = await downloadProvidersSummaryPdf(commonPdfArgs());
@@ -628,6 +628,14 @@ const SecondaryBtn: React.CSSProperties = {
 const ActionBtn = (color: string): React.CSSProperties => ({
   width: "100%", padding: 10, borderRadius: 10, background: color, color: "white", fontWeight: 700, border: "none", cursor: "pointer", fontSize: 13
 });
+
+const TabStyle: React.CSSProperties = {
+  padding: "8px 16px", borderRadius: 8, background: "transparent", color: "#6b7280", fontWeight: 700, border: "none", cursor: "pointer"
+};
+
+const TabActive: React.CSSProperties = {
+  ...TabStyle, background: "#111827", color: "white"
+};
 
 const StatGrid: React.CSSProperties = {
   display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12
