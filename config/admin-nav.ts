@@ -8,6 +8,7 @@ import {
   Briefcase,
   CreditCard,
   DollarSign,
+  Banknote,
   Tags,
   Globe,
   Settings,
@@ -82,6 +83,12 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     name: "Payments",
     href: "/dashboard/payments",
     icon: CreditCard,
+    permissionKey: "canApprovePayments",
+  },
+  {
+    name: "Provider Payouts",
+    href: "/dashboard/payouts",
+    icon: Banknote,
     permissionKey: "canApprovePayments",
   },
   {
