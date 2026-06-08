@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/dialog";
 
 import { useCountryStore } from "@/lib/store/countryStore";
+import { TrendingUp, BarChart, DollarSign, XCircle, CheckCircle } from "lucide-react";
 
 type Provider = {
   _id: string;
@@ -117,6 +118,11 @@ export default function ProvidersPage() {
   const [openRejectModal, setOpenRejectModal] = useState(false);
   const [rejectTarget, setRejectTarget] = useState<Provider | null>(null);
   const [rejectReason, setRejectReason] = useState<string>("");
+
+  // ✅ scorecard modal state
+  const [openScorecardModal, setOpenScorecardModal] = useState(false);
+  const [scorecardData, setScorecardData] = useState<any>(null);
+  const [scorecardLoading, setScorecardLoading] = useState(false);
 
   const loadProviders = async (activeTab: TabKey) => {
     setLoading(true);
@@ -235,6 +241,20 @@ export default function ProvidersPage() {
     setRejectTarget(provider);
     setRejectReason(getRejectReason(provider) || "");
     setOpenRejectModal(true);
+  };
+
+  const openScorecard = async (provider: Provider) => {
+    setSelectedProvider(provider);
+    setScorecardLoading(true);
+    setOpenScorecardModal(true);
+    try {
+      const res = await api.get(`/api/admin/providers/providers/${provider._id}/financials`);
+      setScorecardData(res.data);
+    } catch (err) {
+      alert("Failed to load scorecard");
+    } finally {
+      setScorecardLoading(false);
+    }
   };
 
   // ✅ Status actions (uses adminUsers routes)
@@ -490,9 +510,18 @@ export default function ProvidersPage() {
                             <Button
                               size="sm"
                               variant="outline"
+                              className="bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200"
+                              onClick={() => openScorecard(p)}
+                            >
+                              Financials
+                            </Button>
+
+                            <Button
+                              size="sm"
+                              variant="outline"
                               onClick={() => openDocs(p)}
                             >
-                              View Docs
+                              Docs
                             </Button>
 
                             {/* ✅ Approve should exist for rejected too */}
@@ -693,6 +722,79 @@ export default function ProvidersPage() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ✅ Financial Scorecard Modal */}
+      <Dialog
+        open={openScorecardModal}
+        onOpenChange={(v) => {
+          setOpenScorecardModal(v);
+          if (!v) setScorecardData(null);
+        }}
+      >
+        <DialogContent className="max-w-2xl bg-white">
+          <DialogHeader>
+            <DialogTitle>Provider Financial Scorecard</DialogTitle>
+          </DialogHeader>
+
+          {scorecardLoading ? (
+            <div className="py-20 text-center text-sm text-muted-foreground">Loading scorecard...</div>
+          ) : scorecardData ? (
+            <div className="space-y-6">
+              <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 border">
+                 <div className="h-12 w-12 rounded-full bg-blue-600 flex items-center justify-center text-white font-black text-xl">
+                    {selectedProvider?.name?.[0]}
+                 </div>
+                 <div>
+                    <h3 className="font-bold text-lg">{selectedProvider?.name}</h3>
+                    <p className="text-xs text-muted-foreground">{selectedProvider?.email}</p>
+                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                 <div className="p-4 rounded-xl border bg-white shadow-sm">
+                    <p className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
+                      <TrendingUp size={14} className="text-green-600"/> Weekly Earnings
+                    </p>
+                    <p className="text-2xl font-black mt-1">{scorecardData.weeklyEarnings.toFixed(2)} {scorecardData.currency}</p>
+                 </div>
+                 <div className="p-4 rounded-xl border bg-white shadow-sm">
+                    <p className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
+                      <BarChart size={14} className="text-blue-600"/> Monthly Earnings
+                    </p>
+                    <p className="text-2xl font-black mt-1">{scorecardData.monthlyEarnings.toFixed(2)} {scorecardData.currency}</p>
+                 </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                 <div className="p-4 rounded-xl border text-center">
+                    <p className="text-xs opacity-60">Completed Jobs</p>
+                    <p className="text-xl font-bold text-green-600">{scorecardData.completedJobs}</p>
+                 </div>
+                 <div className="p-4 rounded-xl border text-center">
+                    <p className="text-xs opacity-60">Active Jobs</p>
+                    <p className="text-xl font-bold text-blue-600">{scorecardData.activeJobs}</p>
+                 </div>
+                 <div className="p-4 rounded-xl border text-center">
+                    <p className="text-xs opacity-60">Cancel Rate</p>
+                    <p className="text-xl font-bold text-red-600">{scorecardData.cancellationRate}%</p>
+                 </div>
+              </div>
+
+              <div className="p-4 rounded-xl border bg-slate-900 text-white flex justify-between items-center">
+                 <div>
+                    <p className="text-xs opacity-70">Rating Trend (Avg)</p>
+                    <p className="text-lg font-black">★ {scorecardData.ratingTrend.toFixed(1)}</p>
+                 </div>
+                 <CheckCircle size={30} className="text-green-400 opacity-50" />
+              </div>
+
+              <div className="flex justify-end pt-2">
+                 <Button onClick={() => setOpenScorecardModal(false)}>Close Scorecard</Button>
+              </div>
+            </div>
+          ) : null}
         </DialogContent>
       </Dialog>
     </div>

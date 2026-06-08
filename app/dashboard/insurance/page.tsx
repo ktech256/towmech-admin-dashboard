@@ -5,17 +5,12 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   createPartner,
   disableCode,
-  downloadPartnerInvoicePdf,
-  downloadProviderStatementPdf,
-  downloadProvidersSummaryPdf,
   generateCodes,
   getCodes,
-  getInvoice,
   getPartners,
   updatePartner,
   type InsuranceCode,
   type InsurancePartner,
-  type InvoiceResponse,
 } from "@/lib/api/insurance";
 
 type Country = {
@@ -202,15 +197,6 @@ export default function InsurancePage() {
     {}
   );
   const [batchReason, setBatchReason] = useState("");
-
-  // Invoice filters
-  const [invoiceMode, setInvoiceMode] = useState<"MONTH" | "RANGE">("MONTH");
-  const [invoiceMonth, setInvoiceMonth] = useState<string>(MONTHS[0]);
-  const [fromDate, setFromDate] = useState<string>(todayYmd());
-  const [toDate, setToDate] = useState<string>(todayYmd());
-  const [providerIdFilter, setProviderIdFilter] = useState<string>("");
-
-  const [invoice, setInvoice] = useState<InvoiceResponse | null>(null);
 
   // Helpers: partner list + codes
   async function loadCountries() {
@@ -606,152 +592,6 @@ export default function InsurancePage() {
     }
   }
 
-  async function onLoadInvoice() {
-    if (!selectedCountryCode || !selectedPartnerId) return;
-
-    setSaving(true);
-    setError(null);
-    setInvoice(null);
-
-    try {
-      const inv = await getInvoice({
-        countryCode: selectedCountryCode,
-        partnerId: selectedPartnerId,
-        month: invoiceMode === "MONTH" ? invoiceMonth : undefined,
-        from: invoiceMode === "RANGE" ? fromDate : undefined,
-        to: invoiceMode === "RANGE" ? toDate : undefined,
-        providerId: providerIdFilter.trim() || undefined,
-      });
-
-      setInvoice(inv);
-    } catch (e: any) {
-      setError(e?.message || "Invoice fetch failed");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function commonPdfArgs() {
-    return {
-      countryCode: selectedCountryCode,
-      partnerId: selectedPartnerId,
-      month: invoiceMode === "MONTH" ? invoiceMonth : undefined,
-      from: invoiceMode === "RANGE" ? fromDate : undefined,
-      to: invoiceMode === "RANGE" ? toDate : undefined,
-    };
-  }
-
-  async function onDownloadPartnerPdf() {
-    if (!selectedCountryCode || !selectedPartnerId || !invoice) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const blob = await downloadPartnerInvoicePdf(commonPdfArgs());
-      const label =
-        invoiceMode === "MONTH"
-          ? `partner-invoice-${selectedCountryCode}-${invoiceMonth}.pdf`
-          : `partner-invoice-${selectedCountryCode}-${fromDate}-to-${toDate}.pdf`;
-      triggerDownload(blob, label);
-    } catch (e: any) {
-      setError(e?.message || "PDF download failed");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function onDownloadProvidersPdf() {
-    if (!selectedCountryCode || !selectedPartnerId || !invoice) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const blob = await downloadProvidersSummaryPdf(commonPdfArgs());
-      const label =
-        invoiceMode === "MONTH"
-          ? `providers-owed-${selectedCountryCode}-${invoiceMonth}.pdf`
-          : `providers-owed-${selectedCountryCode}-${fromDate}-to-${toDate}.pdf`;
-      triggerDownload(blob, label);
-    } catch (e: any) {
-      setError(e?.message || "Providers PDF failed");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function onDownloadProviderPdf() {
-    if (!selectedCountryCode || !selectedPartnerId || !invoice) return;
-
-    const providerId = providerIdFilter.trim();
-    if (!providerId)
-      return setError(
-        "Enter Provider/Driver ID to download an individual statement."
-      );
-
-    setSaving(true);
-    setError(null);
-    try {
-      const blob = await downloadProviderStatementPdf({
-        ...commonPdfArgs(),
-        providerId,
-      });
-      const label =
-        invoiceMode === "MONTH"
-          ? `provider-statement-${selectedCountryCode}-${invoiceMonth}-${providerId}.pdf`
-          : `provider-statement-${selectedCountryCode}-${fromDate}-to-${toDate}-${providerId}.pdf`;
-      triggerDownload(blob, label);
-    } catch (e: any) {
-      setError(e?.message || "Provider PDF failed");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  // Codes PDF download
-  async function onDownloadCodesPdf() {
-    if (!selectedCountryCode || !selectedPartnerId) return;
-
-    setSaving(true);
-    setError(null);
-
-    try {
-      const url = `${API_BASE}/api/admin/insurance/codes/pdf?countryCode=${encodeURIComponent(
-        selectedCountryCode
-      )}&partnerId=${encodeURIComponent(selectedPartnerId)}`;
-
-      const res = await fetch(url, { method: "GET", headers: authHeaders() });
-      if (res.ok) {
-        const blob = await res.blob();
-        triggerDownload(
-          blob,
-          `insurance-codes-${selectedCountryCode}-${
-            (selectedPartner as any)?.partnerCode || selectedPartnerId
-          }.pdf`
-        );
-        return;
-      }
-
-      const printable = buildCodesPrintHtml(
-        selectedPartner?.name || "Partner",
-        (selectedPartner as any)?.partnerCode || "",
-        selectedCountryCode,
-        currency,
-        groupedCodes,
-        normalizeCodeStatus,
-        codeUsedAmount
-      );
-      const w = window.open("", "_blank");
-      if (!w) throw new Error("Popup blocked. Allow popups to download Codes PDF.");
-      w.document.open();
-      w.document.write(printable);
-      w.document.close();
-      w.focus();
-      w.print();
-    } catch (e: any) {
-      setError(e?.message || "Codes PDF failed");
-    } finally {
-      setSaving(false);
-    }
-  }
-
   const partnerStatusLabel = (p: InsurancePartner) => {
     const isActive = Boolean((p as any).isActive);
     const isArchived = Boolean((p as any).isArchived);
@@ -897,9 +737,31 @@ export default function InsurancePage() {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "440px 1fr", gap: 16 }}>
-        {/* Left column */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 16 }}>
+        {/* Management column */}
         <div style={{ display: "grid", gap: 16 }}>
+          <Box title="Partner Management">
+            <div style={{ fontSize: 13, opacity: 0.8 }}>
+              Use <b>Edit Partner</b> to update name/code/contact and to set <b>Enabled/Disabled</b> or <b>Archived</b>.
+            </div>
+            <div style={{ marginTop: 12 }}>
+              {selectedPartner ? (
+                <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12 }}>
+                  <div style={{ fontWeight: 900 }}>{selectedPartner.name}</div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>
+                    Code: <b>{(selectedPartner as any).partnerCode || "—"}</b> • Status: {partnerStatusLabel(selectedPartner)}
+                  </div>
+                  <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>
+                    Email: {(selectedPartner as any).email || (selectedPartner as any).contactEmail || "—"} • Phone:{" "}
+                    {(selectedPartner as any).phone || (selectedPartner as any).contactPhone || "—"}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ opacity: 0.75 }}>Select a partner to manage.</div>
+              )}
+            </div>
+          </Box>
+
           <Box title="Generate Codes">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
               <div style={{ fontSize: 13, opacity: 0.85 }}>
@@ -942,109 +804,6 @@ export default function InsurancePage() {
             </div>
           </Box>
 
-          <Box title="Statements & PDFs">
-            <Field label="Mode">
-              <select
-                value={invoiceMode}
-                onChange={(e) => setInvoiceMode(e.target.value as any)}
-                style={inputStyle}
-              >
-                <option value="MONTH">Month (YYYY-MM)</option>
-                <option value="RANGE">Date range (From → To)</option>
-              </select>
-            </Field>
-
-            {invoiceMode === "MONTH" ? (
-              <Field label="Month">
-                <select value={invoiceMonth} onChange={(e) => setInvoiceMonth(e.target.value)} style={inputStyle}>
-                  {MONTHS.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <Field label="From">
-                  <input value={fromDate} onChange={(e) => setFromDate(e.target.value)} type="date" style={inputStyle} />
-                </Field>
-                <Field label="To">
-                  <input value={toDate} onChange={(e) => setToDate(e.target.value)} type="date" style={inputStyle} />
-                </Field>
-              </div>
-            )}
-
-            <Field label="Provider/Driver ID (required for Individual statement)">
-              <input
-                value={providerIdFilter}
-                onChange={(e) => setProviderIdFilter(e.target.value)}
-                placeholder="paste providerId here"
-                style={inputStyle}
-              />
-            </Field>
-
-            <button onClick={onLoadInvoice} disabled={saving || !selectedPartnerId} style={greenBtn}>
-              {saving ? "Loading..." : "Generate Statement"}
-            </button>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10, marginTop: 12 }}>
-              <button onClick={onDownloadPartnerPdf} disabled={saving || !invoice} style={btnRed}>
-                Download Partner Invoice PDF (Gross)
-              </button>
-
-              <button onClick={onDownloadProvidersPdf} disabled={saving || !invoice} style={btnBlue}>
-                Download General Providers Statement PDF (Summary)
-              </button>
-
-              <button onClick={onDownloadProviderPdf} disabled={saving || !invoice || !providerIdFilter.trim()} style={btnPurple}>
-                Download Individual Provider Statement PDF
-              </button>
-            </div>
-
-            {invoice ? (
-              <div style={{ marginTop: 12, fontSize: 13, display: "grid", gap: 6 }}>
-                <div>
-                  <b>Total jobs:</b> {invoice.totals.totalJobs}
-                </div>
-                <div>
-                  <b>Partner invoice total (gross):</b> {invoice.totals.totalPartnerAmountDue} {currency}
-                </div>
-                <div>
-                  <b>Total booking fee waived:</b> {invoice.totals.totalBookingFeeWaived} {currency}
-                </div>
-                <div>
-                  <b>Total provider amount due (net):</b> {invoice.totals.totalProviderAmountDue} {currency}
-                </div>
-              </div>
-            ) : null}
-          </Box>
-
-          <Box title="Partner Management">
-            <div style={{ fontSize: 13, opacity: 0.8 }}>
-              Use <b>Edit Partner</b> to update name/code/contact and to set <b>Enabled/Disabled</b> or <b>Archived</b>.
-            </div>
-            <div style={{ marginTop: 12 }}>
-              {selectedPartner ? (
-                <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12 }}>
-                  <div style={{ fontWeight: 900 }}>{selectedPartner.name}</div>
-                  <div style={{ fontSize: 12, opacity: 0.8 }}>
-                    Code: <b>{(selectedPartner as any).partnerCode || "—"}</b> • Status: {partnerStatusLabel(selectedPartner)}
-                  </div>
-                  <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>
-                    Email: {(selectedPartner as any).email || (selectedPartner as any).contactEmail || "—"} • Phone:{" "}
-                    {(selectedPartner as any).phone || (selectedPartner as any).contactPhone || "—"}
-                  </div>
-                </div>
-              ) : (
-                <div style={{ opacity: 0.75 }}>Select a partner to manage.</div>
-              )}
-            </div>
-          </Box>
-        </div>
-
-        {/* Right column */}
-        <div style={{ display: "grid", gap: 16 }}>
           <div style={{ display: "grid", gap: 12 }}>
             <CodeRow
               title={`ACTIVE Codes (${groupedCodes.active.length})`}
@@ -1089,82 +848,6 @@ export default function InsurancePage() {
               selectedMap={batchSelected}
               onToggleSelected={toggleSelected}
             />
-          </div>
-
-          <div style={{ border: "1px solid #e5e7eb", borderRadius: 14, background: "white", overflow: "hidden" }}>
-            <div style={{ padding: 14, borderBottom: "1px solid #e5e7eb", fontWeight: 900 }}>
-              Statement Items {invoice ? `(${invoice.items.length})` : ""}
-            </div>
-
-            {!invoice ? (
-              <div style={{ padding: 14, opacity: 0.7 }}>Generate a statement to see items.</div>
-            ) : invoice.items.length === 0 ? (
-              <div style={{ padding: 14, opacity: 0.7 }}>No insurance jobs in this period.</div>
-            ) : (
-              <div style={{ maxHeight: 520, overflow: "auto" }}>
-                {invoice.items.map((it) => (
-                  <div key={it.jobId} style={{ padding: 12, borderBottom: "1px solid #f3f4f6" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                      <div style={{ fontWeight: 900, fontSize: 14 }}>
-                        Job {it.shortId} <span style={{ opacity: 0.6, fontWeight: 700 }}>({it.status})</span>
-                      </div>
-                      <div style={{ fontSize: 12, opacity: 0.75 }}>{new Date(it.createdAt).toLocaleString()}</div>
-                    </div>
-
-                    <div style={{ fontSize: 12, marginTop: 6 }}>
-                      <b>Provider:</b> {it.provider?.name || "-"}{" "}
-                      {it.provider?.providerId ? <span style={{ opacity: 0.7 }}>• {it.provider.providerId}</span> : null}
-                    </div>
-
-                    <div style={{ fontSize: 12, marginTop: 6 }}>
-                      <b>Pickup:</b> {it.pickupAddressText || "-"}
-                    </div>
-                    <div style={{ fontSize: 12 }}>
-                      <b>Dropoff:</b> {it.dropoffAddressText || "-"}
-                    </div>
-
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 8 }}>
-                      <div style={{ fontSize: 12 }}>
-                        <b>Job amount (gross):</b> {it.pricing.estimatedTotal} {currency}
-                      </div>
-                      <div style={{ fontSize: 12 }}>
-                        <b>Provider due (net):</b> {it.pricing.providerAmountDue} {currency}
-                      </div>
-                    </div>
-
-                    <div style={{ fontSize: 12, marginTop: 6, opacity: 0.85 }}>
-                      <b>Insurance code:</b> {it.insurance.code || "-"}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div style={{ border: "1px solid #e5e7eb", borderRadius: 14, background: "white", overflow: "hidden" }}>
-            <div style={{ padding: 14, borderBottom: "1px solid #e5e7eb", fontWeight: 900 }}>
-              Providers Owed (from statement)
-            </div>
-
-            {!invoice ? (
-              <div style={{ padding: 14, opacity: 0.7 }}>Generate statement to see provider totals.</div>
-            ) : invoice.groupedByProvider.length === 0 ? (
-              <div style={{ padding: 14, opacity: 0.7 }}>No assigned providers in this period.</div>
-            ) : (
-              <div style={{ maxHeight: 320, overflow: "auto" }}>
-                {invoice.groupedByProvider.map((p) => (
-                  <div key={p.providerId} style={{ padding: 12, borderBottom: "1px solid #f3f4f6" }}>
-                    <div style={{ fontWeight: 900, fontSize: 13 }}>
-                      {p.name || "Unknown Provider"}{" "}
-                      <span style={{ opacity: 0.6, fontWeight: 700 }}>• {p.providerId}</span>
-                    </div>
-                    <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>
-                      Jobs: <b>{p.jobCount}</b> • Net due: <b>{p.netTotalDue}</b> {currency}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         </div>
       </div>

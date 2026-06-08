@@ -91,6 +91,12 @@ const PERMISSION_KEYS = [
   { key: "canManagePaymentRouting", label: "Manage Payment Routing" },
   { key: "canManageLegal", label: "Manage Legal" },
   { key: "canManageInsurance", label: "Manage Insurance" },
+
+  // ✅ Phase 4: Financial Permissions
+  { key: "canManageInsuranceInvoices", label: "Manage Insurance Invoices" },
+  { key: "canManageProviderPayouts", label: "Manage Provider Payouts" },
+  { key: "canViewProviderStatements", label: "View Provider Statements" },
+  { key: "canViewInsuranceStatements", label: "View Insurance Statements" },
 ];
 
 function fmtPhone(v?: string) {

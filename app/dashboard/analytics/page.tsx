@@ -25,6 +25,8 @@ type Analytics = {
       revenueToday: number;
       revenueWeek: number;
       revenueMonth: number;
+      insuranceRevenue?: number;
+      cashRevenue?: number;
     };
     payments: {
       paymentsPaid: number;
@@ -183,6 +185,25 @@ export default function AnalyticsPage() {
 
       {!loading && data && (
         <>
+          {/* ✅ REVENUE BREAKDOWN */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Revenue Analytics (Insurance vs Cash)</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-4 md:grid-cols-2">
+               <div className="flex flex-col gap-2 p-6 rounded-xl border bg-gradient-to-br from-blue-50 to-white dark:from-blue-900/10">
+                  <p className="text-sm font-bold text-blue-600 uppercase">Insurance Revenue</p>
+                  <p className="text-3xl font-black">{formatMoney(data.business.revenue.insuranceRevenue || 0, resolvedCurrency)}</p>
+                  <p className="text-xs opacity-60">Total volume from insurance-linked jobs</p>
+               </div>
+               <div className="flex flex-col gap-2 p-6 rounded-xl border bg-gradient-to-br from-green-50 to-white dark:from-green-900/10">
+                  <p className="text-sm font-bold text-green-600 uppercase">Cash Revenue</p>
+                  <p className="text-3xl font-black">{formatMoney(data.business.revenue.cashRevenue || 0, resolvedCurrency)}</p>
+                  <p className="text-xs opacity-60">Total volume from direct cash jobs</p>
+               </div>
+            </CardContent>
+          </Card>
+
           {/* ✅ BUSINESS METRICS */}
           <Card>
             <CardHeader className="flex flex-row justify-between items-center">

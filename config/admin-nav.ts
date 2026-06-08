@@ -17,6 +17,7 @@ import {
   Bell,
   MessageCircle,
   UserCog,
+  FileText,
 } from "lucide-react";
 
 export type AdminNavItem = {
@@ -89,7 +90,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     name: "Provider Payouts",
     href: "/dashboard/payouts",
     icon: Banknote,
-    permissionKey: "canApprovePayments",
+    permissionKey: "canManageProviderPayouts",
   },
   {
     name: "Pricing",
@@ -188,5 +189,11 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     href: "/dashboard/insurance",
     icon: Globe,
     permissionKey: "canManageInsurance",
+  },
+  {
+    name: "Insurance Invoices",
+    href: "/dashboard/insurance-invoices",
+    icon: FileText,
+    permissionKey: "canManageInsuranceInvoices",
   },
 ];

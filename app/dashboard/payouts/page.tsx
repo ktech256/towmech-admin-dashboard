@@ -16,12 +16,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useCountryStore } from "@/lib/store/countryStore";
+import { downloadWeeklyStatementPdf, downloadMonthlyStatementPdf } from "@/lib/api/payouts";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { FileText, Download, Calendar } from "lucide-react";
 
 type Payout = {
   _id: string;
@@ -36,6 +38,12 @@ type Payout = {
   weekStartDate: string;
   weekEndDate: string;
   processedAt: string;
+  auditTrail?: Array<{
+    action: string;
+    performedBy?: { name: string };
+    timestamp: string;
+    note?: string;
+  }>;
   jobs?: Array<{
     amount: number;
     completedAt: string;
@@ -110,18 +118,30 @@ export default function PayoutsPage() {
         description="Manage provider earnings, process weekly payouts, and track SMS/Email notifications for insurance jobs."
       />
 
-      {!isWindowOpen && (
-        <Card className="border-yellow-500 bg-yellow-50 dark:bg-yellow-950/20">
-          <CardContent className="py-4">
-            <div className="flex items-center gap-3 text-sm text-yellow-800 dark:text-yellow-500">
-              <span className="text-xl">⚠️</span>
-              <p>
-                <strong>Payment Window Closed:</strong> Payouts can only be processed on <strong>Tuesdays</strong> between <strong>08:00 AM and 04:00 PM</strong>.
-              </p>
-            </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card className="border-blue-200 bg-blue-50/30">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-blue-600">Payout Forecast</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">Estimated Next Tuesday</div>
+            <p className="text-xs text-muted-foreground mt-1">Calculated from jobs completed since Monday 00:00.</p>
           </CardContent>
         </Card>
-      )}
+
+        {!isWindowOpen && (
+          <Card className="border-yellow-500 bg-yellow-50 dark:bg-yellow-950/20 text-yellow-800 dark:text-yellow-500">
+            <CardContent className="py-6">
+              <div className="flex items-center gap-3 text-sm">
+                <span className="text-xl">⚠️</span>
+                <p>
+                  <strong>Payment Window Closed:</strong> Payouts can only be processed on <strong>Tuesdays</strong> between <strong>08:00 AM and 04:00 PM</strong>.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
       <Card>
         <CardHeader>
@@ -141,13 +161,14 @@ export default function PayoutsPage() {
                     <TableHead>Period</TableHead>
                     <TableHead>Amount</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Statements</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {payouts.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center py-8 text-sm text-muted-foreground">
+                      <TableCell colSpan={6} className="text-center py-8 text-sm text-muted-foreground">
                         No payouts found.
                       </TableCell>
                     </TableRow>
@@ -168,6 +189,58 @@ export default function PayoutsPage() {
                           <Badge className={p.status === "PAID" ? "bg-green-600" : "bg-yellow-600"}>
                             {p.status}
                           </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-2 text-xs">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 px-2 flex gap-1"
+                              title="Download Weekly Statement"
+                              onClick={async () => {
+                                try {
+                                  const blob = await downloadWeeklyStatementPdf(p._id);
+                                  const url = window.URL.createObjectURL(blob);
+                                  const a = document.createElement("a");
+                                  a.href = url;
+                                  a.download = `weekly-statement-${p._id}.pdf`;
+                                  a.click();
+                                } catch (err) {
+                                  alert("Failed to download weekly statement");
+                                }
+                              }}
+                            >
+                              <Download className="h-3 w-3" />
+                              Week
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 px-2 flex gap-1"
+                              title="Download Monthly Statement"
+                              onClick={async () => {
+                                try {
+                                  const month = new Date(p.weekStartDate).toISOString().slice(0, 7);
+                                  if (!p.provider?._id && !(p as any).providerId) {
+                                      alert("Provider ID missing");
+                                      return;
+                                  }
+                                  const pid = p.provider?._id || (p as any).providerId;
+                                  const blob = await downloadMonthlyStatementPdf(pid, month);
+                                  const url = window.URL.createObjectURL(blob);
+                                  const a = document.createElement("a");
+                                  a.href = url;
+                                  a.download = `monthly-statement-${pid}-${month}.pdf`;
+                                  a.click();
+                                } catch (err) {
+                                  alert("No monthly data available yet or failed to download.");
+                                }
+                              }}
+                            >
+                              <Calendar className="h-3 w-3" />
+                              Month
+                            </Button>
+                          </div>
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
@@ -261,6 +334,25 @@ export default function PayoutsPage() {
                 Close
               </Button>
             </div>
+
+            {selectedPayout?.auditTrail && selectedPayout.auditTrail.length > 0 && (
+              <div className="mt-8 pt-6 border-t">
+                <h4 className="text-sm font-bold mb-4">Financial Audit Trail</h4>
+                <div className="space-y-3">
+                  {selectedPayout.auditTrail.map((log, i) => (
+                    <div key={i} className="text-xs border-l-2 border-slate-200 pl-3 py-1">
+                      <div className="flex justify-between">
+                        <span className="font-bold text-blue-600">{log.action}</span>
+                        <span className="opacity-60">{new Date(log.timestamp).toLocaleString()}</span>
+                      </div>
+                      <div className="mt-1">
+                        By: {log.performedBy?.name || "System"} {log.note && `• Note: ${log.note}`}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>
