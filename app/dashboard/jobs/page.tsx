@@ -216,7 +216,14 @@ export default function JobsPage() {
                         <TableCell>
                           {job.createdAt ? new Date(job.createdAt).toLocaleString() : "—"}
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-right space-x-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => window.location.href = `/dashboard/chats/${job._id}`}
+                          >
+                            Chat Log
+                          </Button>
                           <Button
                             size="sm"
                             variant="outline"
