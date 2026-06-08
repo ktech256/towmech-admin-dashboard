@@ -100,6 +100,8 @@ export default function ProvidersPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
+  const [minRating, setMinRating] = useState("0");
+  const [maxRating, setMaxRating] = useState("5");
 
   // ✅ country scoping (multi-country)
   const { countryCode } = useCountryStore();
@@ -122,11 +124,12 @@ export default function ProvidersPage() {
 
     try {
       let data;
-      if (activeTab === "pending") data = await fetchPendingProviders();
-      else if (activeTab === "approved") data = await fetchApprovedProviders();
-      else data = await fetchRejectedProviders();
+      const queryParams = `?minRating=${minRating}&maxRating=${maxRating}`;
+      if (activeTab === "pending") data = await api.get(`/api/admin/providers/providers/pending${queryParams}`);
+      else if (activeTab === "approved") data = await api.get(`/api/admin/providers/providers/approved${queryParams}`);
+      else data = await api.get(`/api/admin/providers/providers/rejected${queryParams}`);
 
-      const list = data?.providers || data?.data || [];
+      const list = data?.data?.providers || data?.data?.data || [];
       setProviders(Array.isArray(list) ? list : []);
     } catch (err: any) {
       setError(err?.response?.data?.message || "Failed to load providers.");
@@ -144,7 +147,7 @@ export default function ProvidersPage() {
     }
     loadProviders(tab);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, countryCode]);
+  }, [tab, countryCode, minRating, maxRating]);
 
   const filteredProviders = useMemo(() => {
     const list = Array.isArray(providers) ? providers : [];
@@ -378,12 +381,26 @@ export default function ProvidersPage() {
               : "Rejected Providers"}
           </CardTitle>
 
-          <Input
-            className="max-w-sm"
-            placeholder="Search by name, email, type..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-slate-500">Min ★</span>
+              <Input
+                type="number"
+                min="0"
+                max="5"
+                step="0.1"
+                className="w-20"
+                value={minRating}
+                onChange={(e) => setMinRating(e.target.value)}
+              />
+            </div>
+            <Input
+              className="max-w-sm"
+              placeholder="Search by name, email, type..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
         </CardHeader>
 
         <CardContent>
