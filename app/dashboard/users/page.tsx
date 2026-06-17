@@ -34,7 +34,11 @@ type User = {
   phone?: string;
   role?: string;
   isVerified?: boolean;
-  isBlocked?: boolean;
+  isDeviceBlocked?: boolean;
+  otpAttempts?: number;
+  blockReason?: string;
+  blockExpiresAt?: string;
+  lastOtpRequestAt?: string;
   createdAt?: string;
   countryCode?: string;
   lastLoginAt?: string;
@@ -187,7 +191,7 @@ export default function UsersPage() {
 
   const totalUsers = visibleUsers.length;
   const verifiedUsers = visibleUsers.filter((u) => u.isVerified).length;
-  const blockedUsers = visibleUsers.filter((u) => u.isBlocked).length;
+  const blockedUsers = visibleUsers.filter((u) => u.isDeviceBlocked).length;
 
   const suspendUser = async (id: string) => {
     setActionLoadingId(id);
@@ -232,6 +236,19 @@ export default function UsersPage() {
       await loadUsers();
     } catch (err: any) {
       alert(err?.response?.data?.message || "Unban failed");
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const unblockDevice = async (id: string) => {
+    setActionLoadingId(id);
+    try {
+      await api.post(withApiPrefix(`/admin/users/unblock-device`), { userId: id });
+      await loadUsers();
+      alert("Device unblocked successfully ✅");
+    } catch (err: any) {
+      alert(err?.response?.data?.message || "Unblock device failed");
     } finally {
       setActionLoadingId(null);
     }
@@ -407,7 +424,7 @@ export default function UsersPage() {
                                 <Badge variant="secondary">Unverified</Badge>
                               )}
 
-                              {u.isBlocked && <Badge className="bg-red-600 text-white">Blocked</Badge>}
+                              {u.isDeviceBlocked && <Badge className="bg-red-600 text-white">Blocked</Badge>}
 
                               {statusPill(u)}
                             </div>
@@ -507,7 +524,7 @@ export default function UsersPage() {
                   <div className="font-semibold mb-2">Account Status</div>
                   <div className="grid gap-3 md:grid-cols-2">
                     <InfoRow label="Verified" value={prettyBool(detailsUser.isVerified)} />
-                    <InfoRow label="Blocked" value={prettyBool(detailsUser.isBlocked)} />
+                    <InfoRow label="Device Blocked" value={prettyBool(detailsUser.isDeviceBlocked)} />
                     <InfoRow
                       label="Suspended"
                       value={prettyBool(detailsUser.accountStatus?.isSuspended)}
@@ -527,6 +544,16 @@ export default function UsersPage() {
                       <span className="font-medium">Banned reason:</span> {val(detailsUser.accountStatus.bannedReason)}
                     </div>
                   ) : null}
+                </div>
+
+                <div className="rounded-md border p-4">
+                  <div className="font-semibold mb-2">OTP & Blocking Details</div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <InfoRow label="OTP Attempts" value={val(detailsUser.otpAttempts)} />
+                    <InfoRow label="Last OTP Request" value={fmtDate(detailsUser.lastOtpRequestAt)} />
+                    <InfoRow label="Block Reason" value={val(detailsUser.blockReason)} />
+                    <InfoRow label="Block Expires" value={fmtDate(detailsUser.blockExpiresAt)} />
+                  </div>
                 </div>
 
                 <div className="rounded-md border p-4">
@@ -570,6 +597,22 @@ export default function UsersPage() {
                               onClick={() => unbanUser(detailsUser._id)}
                             >
                               {busy ? "..." : "Unban"}
+                            </Button>
+                          )}
+
+                          {detailsUser.isDeviceBlocked && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="border-red-600 text-red-600 hover:bg-red-50"
+                              disabled={busy}
+                              onClick={() => {
+                                if (confirm("Remove device block and allow OTP requests again?")) {
+                                  unblockDevice(detailsUser._id);
+                                }
+                              }}
+                            >
+                              {busy ? "..." : "UNBLOCK DEVICE"}
                             </Button>
                           )}
                         </>
