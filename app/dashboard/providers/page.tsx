@@ -717,7 +717,12 @@ export default function ProvidersPage() {
                   {renderDoc("HURU Criminal Check", docs?.huruCriminalCheck, "huruCriminalCheck")}
                   {renderDoc("Proof of Residence", docs?.proofOfResidence, "proofOfResidence")}
 
-                  {selectedProvider?.role?.includes("TOW") && (
+                  {/* Vehicle Docs (Tow Truck Only) */}
+                  {(selectedProvider?.role?.toLowerCase().includes("tow") ||
+                    selectedProvider?.role?.toLowerCase().includes("truck") ||
+                    docs?.vehicleRC1?.url ||
+                    docs?.proofOfVehicle?.url ||
+                    docs?.vehicleLicenseDisc?.url) && (
                     <>
                       {renderDoc("Vehicle RC1", docs?.vehicleRC1, "vehicleRC1")}
                       {renderDoc("Proof of Vehicle", docs?.proofOfVehicle, "proofOfVehicle")}
