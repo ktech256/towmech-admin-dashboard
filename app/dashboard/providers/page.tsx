@@ -66,6 +66,14 @@ type VerificationDoc = {
   status?: "NOT_SUBMITTED" | "PENDING" | "APPROVED" | "REJECTED";
   reason?: string | null;
   updatedAt?: string | null;
+  submittedAt?: string | null;
+  history?: Array<{
+    url: string;
+    status: string;
+    reason?: string;
+    submittedAt?: string;
+    updatedAt?: string;
+  }>;
 };
 
 type VerificationDocs = {
@@ -387,6 +395,16 @@ export default function ProvidersPage() {
               }}
             />
 
+            <div className="text-[10px] text-slate-500">
+              {doc.submittedAt && `Submitted: ${new Date(doc.submittedAt).toLocaleString()}`}
+            </div>
+
+            {doc.captureTimestamp && (
+              <div className="text-[10px] text-blue-500 font-medium">
+                Camera Captured: {new Date(doc.captureTimestamp).toLocaleString()}
+              </div>
+            )}
+
             <div className="flex items-center justify-between gap-2">
               <a
                 href={url}
@@ -394,7 +412,7 @@ export default function ProvidersPage() {
                 rel="noreferrer"
                 className="text-xs text-blue-600 underline"
               >
-                View Full
+                View Current
               </a>
 
               {field && (
@@ -402,7 +420,7 @@ export default function ProvidersPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    className="h-7 px-2 text-[10px] bg-green-50 hover:bg-green-100 text-green-700"
+                    className="h-7 px-2 text-[10px] bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
                     onClick={() => handleApproveDoc(field)}
                     disabled={status === "APPROVED"}
                   >
@@ -411,7 +429,7 @@ export default function ProvidersPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    className="h-7 px-2 text-[10px] bg-red-50 hover:bg-red-100 text-red-700"
+                    className="h-7 px-2 text-[10px] bg-red-50 hover:bg-red-100 text-red-700 border-red-200"
                     onClick={() => handleRejectDoc(field)}
                     disabled={status === "REJECTED"}
                   >
@@ -420,7 +438,27 @@ export default function ProvidersPage() {
                 </div>
               )}
             </div>
-            {doc?.reason && <div className="text-[10px] text-red-600 font-medium italic">Reason: {doc.reason}</div>}
+
+            {doc?.reason && (
+              <div className="rounded bg-red-50 p-2 text-[10px] text-red-700 border border-red-100">
+                <span className="font-bold">REJECT REASON:</span> {doc.reason}
+              </div>
+            )}
+
+            {doc?.history && doc.history.length > 0 && (
+              <div className="mt-3 border-t pt-2">
+                <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Version History</div>
+                <div className="space-y-1 max-h-24 overflow-y-auto pr-1">
+                  {doc.history.map((h, i) => (
+                    <div key={i} className="flex items-center justify-between text-[9px] bg-slate-50 p-1 rounded">
+                      <a href={h.url} target="_blank" rel="noreferrer" className="text-blue-600 underline truncate max-w-[80px]">v{doc.history!.length - i}</a>
+                      <span className="opacity-60">{h.status}</span>
+                      <span className="opacity-40">{h.updatedAt ? new Date(h.updatedAt).toLocaleDateString() : ""}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
