@@ -103,6 +103,7 @@ function getRejectReason(p?: Provider | null) {
   );
 }
 
+// Phase 6: Complete Verification Document Matrix Implementation
 export default function ProvidersPage() {
   const [tab, setTab] = useState<TabKey>("pending");
   const [providers, setProviders] = useState<Provider[]>([]);
