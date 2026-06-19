@@ -67,12 +67,14 @@ type VerificationDoc = {
   reason?: string | null;
   updatedAt?: string | null;
   submittedAt?: string | null;
+  captureTimestamp?: string | null;
   history?: Array<{
     url: string;
     status: string;
     reason?: string;
     submittedAt?: string;
     updatedAt?: string;
+    captureTimestamp?: string;
   }>;
 };
 
