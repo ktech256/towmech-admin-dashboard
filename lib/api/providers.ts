@@ -29,3 +29,18 @@ export async function rejectProvider(id: string) {
   const res = await api.patch(`/api/admin/providers/providers/${id}/reject`);
   return res.data;
 }
+
+export async function approveProviderDoc(id: string, field: string) {
+  const res = await api.patch(`/api/admin/providers/providers/${id}/documents/${field}/approve`);
+  return res.data;
+}
+
+export async function rejectProviderDoc(id: string, field: string, reason: string) {
+  const res = await api.patch(`/api/admin/providers/providers/${id}/documents/${field}/reject`, { reason });
+  return res.data;
+}
+
+export async function finalApproveProvider(id: string) {
+  const res = await api.patch(`/api/admin/providers/providers/${id}/final-approve`);
+  return res.data;
+}

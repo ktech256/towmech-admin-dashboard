@@ -61,11 +61,22 @@ type Provider = {
   };
 };
 
+type VerificationDoc = {
+  url?: string | null;
+  status?: "NOT_SUBMITTED" | "PENDING" | "APPROVED" | "REJECTED";
+  reason?: string | null;
+  updatedAt?: string | null;
+};
+
 type VerificationDocs = {
-  idDocumentUrl?: string | null;
-  licenseUrl?: string | null;
-  vehicleProofUrl?: string | null;
-  workshopProofUrl?: string | null;
+  idDocument?: VerificationDoc;
+  driverLicense?: VerificationDoc;
+  selfie?: VerificationDoc;
+  vehicleRC1?: VerificationDoc;
+  huruCriminalCheck?: VerificationDoc;
+  proofOfResidence?: VerificationDoc;
+  proofOfVehicle?: VerificationDoc;
+  vehicleLicenseDisc?: VerificationDoc;
 };
 
 type TabKey = "pending" | "approved" | "rejected";
@@ -237,6 +248,40 @@ export default function ProvidersPage() {
     }
   };
 
+  const handleApproveDoc = async (field: string) => {
+    if (!selectedProvider) return;
+    try {
+      const res = await api.patch(`/api/admin/providers/providers/${selectedProvider._id}/documents/${field}/approve`);
+      setDocs(res.data.verificationDocs);
+    } catch (err: any) {
+      alert(err?.response?.data?.message || "Approve doc failed");
+    }
+  };
+
+  const handleRejectDoc = async (field: string) => {
+    if (!selectedProvider) return;
+    const reason = prompt("Enter rejection reason:");
+    if (reason === null) return;
+    try {
+      const res = await api.patch(`/api/admin/providers/providers/${selectedProvider._id}/documents/${field}/reject`, { reason });
+      setDocs(res.data.verificationDocs);
+    } catch (err: any) {
+      alert(err?.response?.data?.message || "Reject doc failed");
+    }
+  };
+
+  const handleFinalApprove = async () => {
+    if (!selectedProvider) return;
+    try {
+      await api.patch(`/api/admin/providers/providers/${selectedProvider._id}/final-approve`);
+      alert("Provider fully verified! ✅");
+      setOpenDocsModal(false);
+      loadProviders(tab);
+    } catch (err: any) {
+      alert(err?.response?.data?.message || "Final approve failed");
+    }
+  };
+
   const openReject = (provider: Provider) => {
     setRejectTarget(provider);
     setRejectReason(getRejectReason(provider) || "");
@@ -310,17 +355,28 @@ export default function ProvidersPage() {
     }
   };
 
-  const renderDoc = (label: string, url?: string | null) => {
+  const renderDoc = (label: string, doc?: VerificationDoc, field?: string) => {
+    const url = doc?.url;
+    const status = doc?.status || "NOT_SUBMITTED";
+
     return (
       <div className="space-y-2 rounded-lg border p-3 bg-white">
-        <div className="text-sm font-medium text-slate-800">{label}</div>
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-medium text-slate-800">{label}</div>
+          <Badge className={
+            status === "APPROVED" ? "bg-green-600 text-white" :
+            status === "REJECTED" ? "bg-red-600 text-white" :
+            status === "PENDING" ? "bg-yellow-600 text-white" :
+            "bg-slate-200 text-slate-600"
+          }>
+            {status}
+          </Badge>
+        </div>
 
         {!url ? (
-          <div className="text-sm text-muted-foreground">No file uploaded yet.</div>
+          <div className="text-sm text-muted-foreground py-4 text-center">No file uploaded yet.</div>
         ) : (
           <div className="space-y-2">
-            {/* If it's a PDF or non-image, hide preview and show a link */}
-            {/* We attempt an image preview; if it errors, it disappears but link remains */}
             <img
               src={url}
               alt={label}
@@ -330,14 +386,40 @@ export default function ProvidersPage() {
               }}
             />
 
-            <a
-              href={url}
-              target="_blank"
-              rel="noreferrer"
-              className="text-sm text-blue-600 underline"
-            >
-              Open {label}
-            </a>
+            <div className="flex items-center justify-between gap-2">
+              <a
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-blue-600 underline"
+              >
+                View Full
+              </a>
+
+              {field && (
+                <div className="flex gap-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2 text-[10px] bg-green-50 hover:bg-green-100 text-green-700"
+                    onClick={() => handleApproveDoc(field)}
+                    disabled={status === "APPROVED"}
+                  >
+                    Approve
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2 text-[10px] bg-red-50 hover:bg-red-100 text-red-700"
+                    onClick={() => handleRejectDoc(field)}
+                    disabled={status === "REJECTED"}
+                  >
+                    Reject
+                  </Button>
+                </div>
+              )}
+            </div>
+            {doc?.reason && <div className="text-[10px] text-red-600 font-medium italic">Reason: {doc.reason}</div>}
           </div>
         )}
       </div>
@@ -628,32 +710,30 @@ export default function ProvidersPage() {
             {!docsLoading && !docsError && (
               <div className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-2">
-                  {renderDoc("ID Document", docs?.idDocumentUrl)}
-                  {renderDoc("License", docs?.licenseUrl)}
-                  {renderDoc("Vehicle Proof", docs?.vehicleProofUrl)}
-                  {renderDoc("Workshop Proof", docs?.workshopProofUrl)}
+                  {renderDoc("ID Document", docs?.idDocument, "idDocument")}
+                  {renderDoc("Driver Licence", docs?.driverLicense, "driverLicense")}
+                  {renderDoc("Selfie / Profile", docs?.selfie, "selfie")}
+                  {renderDoc("HURU Criminal Check", docs?.huruCriminalCheck, "huruCriminalCheck")}
+                  {renderDoc("Proof of Residence", docs?.proofOfResidence, "proofOfResidence")}
+
+                  {selectedProvider?.role?.includes("TOW") && (
+                    <>
+                      {renderDoc("Vehicle RC1", docs?.vehicleRC1, "vehicleRC1")}
+                      {renderDoc("Proof of Vehicle", docs?.proofOfVehicle, "proofOfVehicle")}
+                      {renderDoc("Vehicle Licence Disc", docs?.vehicleLicenseDisc, "vehicleLicenseDisc")}
+                    </>
+                  )}
                 </div>
 
-                {/* ✅ Actions for pending & rejected inside modal */}
+                {/* ✅ Phase 6: Final Approve Button */}
                 {selectedProvider && (tab === "pending" || tab === "rejected") && (
                   <div className="flex justify-end gap-2 border-t pt-4">
                     <Button
-                      disabled={actionLoadingId === selectedProvider._id}
-                      onClick={() => handleApprove(selectedProvider._id)}
+                      className="bg-green-600 hover:bg-green-700 text-white font-bold"
+                      onClick={handleFinalApprove}
                     >
-                      {actionLoadingId === selectedProvider._id ? "..." : "Approve"}
+                      FINAL APPROVE PROVIDER ✅
                     </Button>
-
-                    {/* still allow reject from modal only if NOT already rejected */}
-                    {tab !== "rejected" && (
-                      <Button
-                        variant="destructive"
-                        disabled={actionLoadingId === selectedProvider._id}
-                        onClick={() => openReject(selectedProvider)}
-                      >
-                        Reject
-                      </Button>
-                    )}
                   </div>
                 )}
 
