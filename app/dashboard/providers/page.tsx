@@ -59,6 +59,18 @@ type Provider = {
     rejectReason?: string | null; // optional if backend provides it
     rejectedReason?: string | null; // common alternate field
     rejectionReason?: string | null; // common alternate field
+    verificationDocs?: {
+        companyVerification?: {
+            isCompanyDriver: boolean;
+            partnerId: string;
+            status: string;
+            verifiedAt: string;
+            partnerName: string;
+            partnerType: string;
+            partnerCode: string;
+            verificationSource: string;
+        }
+    }
   };
 
   accountStatus?: {
@@ -835,8 +847,8 @@ export default function ProvidersPage() {
                           </TableCell>
 
                           <TableCell>
-                            <Badge variant="outline" className={p.verificationSource === "COMPANY" ? "border-purple-200 text-purple-700 bg-purple-50" : ""}>
-                              {p.verificationSource || "INDIVIDUAL"}
+                            <Badge variant="outline" className={p.providerProfile?.verificationDocs?.companyVerification?.verificationSource === "COMPANY" ? "border-purple-200 text-purple-700 bg-purple-50" : ""}>
+                              {p.providerProfile?.verificationDocs?.companyVerification?.verificationSource || "INDIVIDUAL"}
                             </Badge>
                           </TableCell>
 
@@ -927,12 +939,37 @@ export default function ProvidersPage() {
                   </Badge>
               )}
             </DialogTitle>
-            {selectedProvider?.verificationSource === "COMPANY" && (
-                <div className="flex gap-2 px-6 pb-2">
-                    <Badge className="bg-purple-600 text-white border-none text-[10px]">🏢 COMPANY VERIFIED</Badge>
-                    {selectedProvider.partnerId && (
-                        <div className="text-[10px] font-bold text-purple-700">
-                            Partner: {selectedProvider.partnerId.name} ({selectedProvider.partnerId.type}) - Code: {selectedProvider.partnerId.partnerCode}
+            {selectedProvider?.providerProfile?.verificationDocs?.companyVerification?.verificationSource === "COMPANY" && (
+                <div className="flex flex-col gap-2 px-6 pb-2">
+                    <div className="flex gap-2">
+                        <Badge className="bg-purple-600 text-white border-none text-[10px]">🏢 COMPANY VERIFIED</Badge>
+                        <Badge variant="outline" className="border-purple-200 text-purple-700 bg-purple-50 text-[10px]">
+                            SOURCE: {selectedProvider.providerProfile.verificationDocs.companyVerification.verificationSource}
+                        </Badge>
+                    </div>
+                    {selectedProvider.providerProfile.verificationDocs.companyVerification.partnerId && (
+                        <div className="bg-purple-50 border border-purple-100 rounded-lg p-3 space-y-2">
+                            <div className="text-[10px] font-black text-purple-600 uppercase">Partner Details</div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <div className="text-[9px] text-slate-400 uppercase font-bold">Company Name</div>
+                                    <div className="text-sm font-bold text-slate-800">
+                                        {selectedProvider.providerProfile.verificationDocs.companyVerification.partnerName || "—"}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div className="text-[9px] text-slate-400 uppercase font-bold">Partner Code</div>
+                                    <div className="text-sm font-black text-slate-800 tracking-wider">
+                                        {selectedProvider.providerProfile.verificationDocs.companyVerification.partnerCode || "—"}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex justify-between items-center pt-2 border-t border-purple-100">
+                                <div className="text-[9px] text-slate-400 uppercase font-bold">Verification Status</div>
+                                <Badge className="bg-green-600 text-white text-[10px]">
+                                    {selectedProvider.providerProfile.verificationDocs.companyVerification.status}
+                                </Badge>
+                            </div>
                         </div>
                     )}
                 </div>
