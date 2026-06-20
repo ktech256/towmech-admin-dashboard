@@ -59,6 +59,10 @@ type Provider = {
     isBanned?: boolean;
     isArchived?: boolean;
   };
+
+  identificationType?: "SA_ID" | "PASSPORT";
+  identificationNumber?: string;
+  passportCountry?: string | null;
 };
 
 type VerificationDoc = {
@@ -122,6 +126,33 @@ function getRejectReason(p?: Provider | null) {
   );
 }
 
+const ALL_COUNTRIES = [
+  "Afghanistan", "Albania", "Algeria", "Andorra", "Angola", "Antigua and Barbuda", "Argentina", "Armenia", "Australia", "Austria", "Azerbaijan",
+  "Bahamas", "Bahrain", "Bangladesh", "Barbados", "Belarus", "Belgium", "Belize", "Benin", "Bhutan", "Bolivia", "Bosnia and Herzegovina", "Botswana", "Brazil", "Brunei", "Bulgaria", "Burkina Faso", "Burundi",
+  "Cabo Verde", "Cambodia", "Cameroon", "Canada", "Central African Republic", "Chad", "Chile", "China", "Colombia", "Comoros", "Congo", "Costa Rica", "Croatia", "Cuba", "Cyprus", "Czech Republic",
+  "Democratic Republic of the Congo", "Denmark", "Djibouti", "Dominica", "Dominican Republic",
+  "East Timor", "Ecuador", "Egypt", "El Salvador", "Equatorial Guinea", "Eritrea", "Estonia", "Eswatini", "Ethiopia",
+  "Fiji", "Finland", "France",
+  "Gabon", "Gambia", "Georgia", "Germany", "Ghana", "Greece", "Grenada", "Guatemala", "Guinea", "Guinea-Bissau", "Guyana",
+  "Haiti", "Honduras", "Hungary",
+  "Iceland", "India", "Indonesia", "Iran", "Iraq", "Ireland", "Israel", "Italy", "Ivory Coast",
+  "Jamaica", "Japan", "Jordan",
+  "Kazakhstan", "Kenya", "Kiribati", "Kuwait", "Kyrgyzstan",
+  "Laos", "Latvia", "Lebanon", "Lesotho", "Liberia", "Libya", "Liechtenstein", "Lithuania", "Luxembourg",
+  "Madagascar", "Malawi", "Malaysia", "Maldives", "Mali", "Malta", "Marshall Islands", "Mauritania", "Mauritius", "Mexico", "Micronesia", "Moldova", "Monaco", "Mongolia", "Montenegro", "Morocco", "Mozambique", "Myanmar",
+  "Namibia", "Nauru", "Nepal", "Netherlands", "New Zealand", "Nicaragua", "Niger", "Nigeria", "North Korea", "North Macedonia", "Norway",
+  "Oman",
+  "Pakistan", "Palau", "Panama", "Papua New Guinea", "Paraguay", "Peru", "Philippines", "Poland", "Portugal",
+  "Qatar",
+  "Romania", "Russia", "Rwanda",
+  "Saint Kitts and Nevis", "Saint Lucia", "Saint Vincent and the Grenadines", "Samoa", "San Marino", "Sao Tome and Principe", "Saudi Arabia", "Senegal", "Serbia", "Seychelles", "Sierra Leone", "Singapore", "Slovakia", "Slonevia", "Solomon Islands", "Somalia", "South Africa", "South Korea", "South Sudan", "Spain", "Sri Lanka", "Sudan", "Suriname", "Sweden", "Switzerland", "Syria",
+  "Taiwan", "Tajikistan", "Tanzania", "Thailand", "Togo", "Tonga", "Trinidad and Tobago", "Tunisia", "Turkey", "Turkmenistan", "Tuvalu",
+  "Uganda", "Ukraine", "United Arab Emirates", "United Kingdom", "United States", "Uruguay", "Uzbekistan",
+  "Vanuatu", "Vatican City", "Venezuela", "Vietnam",
+  "Yemen",
+  "Zambia", "Zimbabwe"
+];
+
 // Phase 6: Complete Verification Document Matrix Implementation
 export default function ProvidersPage() {
   const [tab, setTab] = useState<TabKey>("pending");
@@ -144,6 +175,8 @@ export default function ProvidersPage() {
   const [docsLoading, setDocsLoading] = useState(false);
   const [docsError, setDocsError] = useState<string | null>(null);
   const [docs, setDocs] = useState<VerificationDocs | null>(null);
+
+  const [countrySearch, setCountrySearch] = useState("");
 
   // ✅ reject modal state (with reason)
   const [openRejectModal, setOpenRejectModal] = useState(false);
@@ -271,7 +304,11 @@ export default function ProvidersPage() {
   const handleApproveDoc = async (field: string) => {
     if (!selectedProvider) return;
     try {
-      const res = await api.patch(`/api/admin/providers/providers/${selectedProvider._id}/documents/${field}/approve`);
+      const payload: any = {};
+      if (field === "idDocument") {
+        payload.asType = selectedProvider.identificationType;
+      }
+      const res = await api.patch(`/api/admin/providers/providers/${selectedProvider._id}/documents/${field}/approve`, payload);
       setDocs(res.data.verificationDocs);
     } catch (err: any) {
       alert(err?.response?.data?.message || "Approve doc failed");
@@ -310,6 +347,17 @@ export default function ProvidersPage() {
       setDocs(res.data.verificationDocs);
     } catch (err: any) {
       alert(err?.response?.data?.message || "Expiry update failed");
+    }
+  };
+
+  const handleUpdateIdentification = async (payload: any) => {
+    if (!selectedProvider) return;
+    try {
+      const res = await api.patch(`/api/admin/providers/providers/${selectedProvider._id}/identification`, payload);
+      setSelectedProvider(res.data.provider);
+      alert("Identification updated ✅");
+    } catch (err: any) {
+      alert(err?.response?.data?.message || "Update failed");
     }
   };
 
@@ -408,8 +456,75 @@ export default function ProvidersPage() {
         ? Math.ceil((new Date(doc.expiryDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
         : null;
 
+    const filteredCountries = countrySearch.trim()
+        ? ALL_COUNTRIES.filter(c => c.toLowerCase().includes(countrySearch.toLowerCase()))
+        : [];
+
     return (
       <div className="space-y-2 rounded-lg border p-3 bg-white">
+        {field === "idDocument" && selectedProvider && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 space-y-2">
+                <div className="text-[10px] font-black text-blue-600 uppercase">Registration ID Details</div>
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <div className="text-[9px] text-slate-400 uppercase font-bold">Type</div>
+                        <div className="text-sm font-bold text-slate-800">
+                            {selectedProvider.identificationType === "SA_ID" ? "South African ID" : "Passport"}
+                        </div>
+                    </div>
+                    <div>
+                        <div className="text-[9px] text-slate-400 uppercase font-bold">Number</div>
+                        <div className="text-sm font-black text-slate-800 tracking-wider">
+                            {selectedProvider.identificationNumber || "—"}
+                        </div>
+                    </div>
+                </div>
+
+                {selectedProvider.identificationType === "PASSPORT" && (
+                    <div className="pt-2 border-t border-blue-100">
+                        <div className="text-[9px] text-slate-400 uppercase font-bold mb-1">Passport Country</div>
+                        <div className="relative">
+                            <input
+                                type="text"
+                                className="w-full text-xs font-bold p-2 border rounded bg-white outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder="Search & select country..."
+                                value={selectedProvider.passportCountry || countrySearch}
+                                onChange={(e) => {
+                                    setCountrySearch(e.target.value);
+                                    if (selectedProvider.passportCountry) {
+                                        handleUpdateIdentification({ passportCountry: null });
+                                    }
+                                }}
+                            />
+                            {!selectedProvider.passportCountry && (
+                                <XCircle className="absolute right-2 top-2 text-red-400" size={16} />
+                            )}
+                            {countrySearch && !selectedProvider.passportCountry && (
+                                <div className="absolute z-10 w-full mt-1 bg-white border rounded shadow-lg max-h-40 overflow-y-auto">
+                                    {filteredCountries.map(c => (
+                                        <div
+                                            key={c}
+                                            className="p-2 text-xs hover:bg-blue-50 cursor-pointer font-medium"
+                                            onClick={() => {
+                                                handleUpdateIdentification({ passportCountry: c });
+                                                setCountrySearch("");
+                                            }}
+                                        >
+                                            {c}
+                                        </div>
+                                    ))}
+                                    {filteredCountries.length === 0 && <div className="p-2 text-xs text-slate-400">No matches.</div>}
+                                </div>
+                            )}
+                        </div>
+                        {!selectedProvider.passportCountry && (
+                            <div className="text-[10px] text-red-600 font-bold mt-1">⚠️ Passport country not selected.</div>
+                        )}
+                    </div>
+                )}
+            </div>
+        )}
+
         <div className="flex items-center justify-between">
           <div className="text-sm font-medium text-slate-800">{label}</div>
           <Badge className={
@@ -501,7 +616,9 @@ export default function ProvidersPage() {
                     onClick={() => handleApproveDoc(field)}
                     disabled={status === "APPROVED" || status === "VERIFIED"}
                   >
-                    Approve
+                    {field === "idDocument"
+                        ? (selectedProvider?.identificationType === "SA_ID" ? "Approve SA ID" : "Approve Passport")
+                        : "Approve"}
                   </Button>
                   <Button
                     size="sm"
