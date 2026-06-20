@@ -787,7 +787,7 @@ export default function ProvidersPage() {
                     <TableRow>
                       <TableCell
                         className="text-center py-8 text-sm text-muted-foreground"
-                      colSpan={tab === "rejected" ? 10 : 9}
+                      colSpan={tab === "rejected" ? 11 : 10}
                     >
                       No providers found ✅
                     </TableCell>
