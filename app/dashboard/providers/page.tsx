@@ -45,6 +45,13 @@ type Provider = {
   countryCode?: string;
   rating?: number;
   ratingCount?: number;
+  verificationSource?: string;
+  partnerId?: {
+    _id: string;
+    name: string;
+    type: string;
+    partnerCode: string;
+  };
 
   providerProfile?: {
     verificationStatus?: string;
@@ -771,6 +778,7 @@ export default function ProvidersPage() {
                     <TableHead>Name</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Type</TableHead>
+                    <TableHead>Source</TableHead>
                     <TableHead>ID Status</TableHead>
                     <TableHead>Preference</TableHead>
                     <TableHead>Rating</TableHead>
@@ -827,6 +835,12 @@ export default function ProvidersPage() {
                           </TableCell>
 
                           <TableCell>
+                            <Badge variant="outline" className={p.verificationSource === "COMPANY" ? "border-purple-200 text-purple-700 bg-purple-50" : ""}>
+                              {p.verificationSource || "INDIVIDUAL"}
+                            </Badge>
+                          </TableCell>
+
+                          <TableCell>
                             {p.identificationType === "SA_ID" ? (
                                 <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-[10px]">SA ID</Badge>
                             ) : p.identificationType === "PASSPORT" ? (
@@ -871,67 +885,10 @@ export default function ProvidersPage() {
                             <Button
                               size="sm"
                               variant="outline"
-                              className="bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200"
-                              onClick={() => openScorecard(p)}
-                            >
-                              Financials
-                            </Button>
-
-                            <Button
-                              size="sm"
-                              variant="outline"
                               onClick={() => openDocs(p)}
                             >
-                              Docs
+                              View
                             </Button>
-
-                            {/* ✅ Approve/Reject removed from Pending list per Change 1 */}
-                            {/* ✅ Reject removed from Approved list per Change 2 */}
-                            {tab === "rejected" && (
-                              <Button
-                                size="sm"
-                                disabled={busy}
-                                onClick={() => handleApprove(p._id)}
-                              >
-                                {busy ? "..." : "Approve"}
-                              </Button>
-                            )}
-
-                            {/* ✅ Account controls */}
-                            {!st.isSuspended ? (
-                              <Button size="sm" disabled={busy} onClick={() => suspendUser(p._id)}>
-                                {busy ? "..." : "Suspend"}
-                              </Button>
-                            ) : (
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                disabled={busy}
-                                onClick={() => unsuspendUser(p._id)}
-                              >
-                                {busy ? "..." : "Unsuspend"}
-                              </Button>
-                            )}
-
-                            {!st.isBanned ? (
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                disabled={busy}
-                                onClick={() => banUser(p._id)}
-                              >
-                                {busy ? "..." : "Ban"}
-                              </Button>
-                            ) : (
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                disabled={busy}
-                                onClick={() => unbanUser(p._id)}
-                              >
-                                {busy ? "..." : "Unban"}
-                              </Button>
-                            )}
                           </TableCell>
                         </TableRow>
                       );
@@ -970,6 +927,16 @@ export default function ProvidersPage() {
                   </Badge>
               )}
             </DialogTitle>
+            {selectedProvider?.verificationSource === "COMPANY" && (
+                <div className="flex gap-2 px-6 pb-2">
+                    <Badge className="bg-purple-600 text-white border-none text-[10px]">🏢 COMPANY VERIFIED</Badge>
+                    {selectedProvider.partnerId && (
+                        <div className="text-[10px] font-bold text-purple-700">
+                            Partner: {selectedProvider.partnerId.name} ({selectedProvider.partnerId.type}) - Code: {selectedProvider.partnerId.partnerCode}
+                        </div>
+                    )}
+                </div>
+            )}
           </DialogHeader>
 
           <div className="max-h-[72vh] overflow-y-auto pr-1">

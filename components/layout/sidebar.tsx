@@ -10,6 +10,7 @@ const navItems = [
   { label: "Live Map", href: "/dashboard/live-map", icon: "🗺️" },
   { label: "Users", href: "/dashboard/users", icon: "👥" },
   { label: "Providers", href: "/dashboard/providers", icon: "🚚" },
+  { label: "Partners", href: "/dashboard/partners", icon: "🏢" },
   { label: "Jobs", href: "/dashboard/jobs", icon: "🧾" },
   { label: "Payments", href: "/dashboard/payments", icon: "💳" },
   { label: "Provider Payouts", href: "/dashboard/payouts", icon: "💰" },
