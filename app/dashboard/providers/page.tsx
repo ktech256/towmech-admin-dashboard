@@ -293,6 +293,9 @@ export default function ProvidersPage() {
 
     try {
       const data = await fetchProviderVerification(provider._id);
+      if (data?.provider) {
+        setSelectedProvider(data.provider);
+      }
       setDocs(data?.verificationDocs || null);
     } catch (err: any) {
       setDocsError(err?.response?.data?.message || "Failed to load documents.");
@@ -469,7 +472,11 @@ export default function ProvidersPage() {
                     <div>
                         <div className="text-[9px] text-slate-400 uppercase font-bold">Type</div>
                         <div className="text-sm font-bold text-slate-800">
-                            {selectedProvider.identificationType === "SA_ID" ? "South African ID" : "Passport"}
+                            {selectedProvider.identificationType === "SA_ID"
+                                ? "South African ID"
+                                : selectedProvider.identificationType === "PASSPORT"
+                                    ? "Passport"
+                                    : "Unknown Type"}
                         </div>
                     </div>
                     <div>
@@ -763,6 +770,7 @@ export default function ProvidersPage() {
                     <TableHead>Name</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Type</TableHead>
+                    <TableHead>ID Status</TableHead>
                     <TableHead>Preference</TableHead>
                     <TableHead>Rating</TableHead>
                     <TableHead>Verification</TableHead>
@@ -791,11 +799,40 @@ export default function ProvidersPage() {
 
                       return (
                         <TableRow key={p._id}>
-                          <TableCell className="font-medium">{p.name || "—"}</TableCell>
+                          <TableCell className="font-medium">
+                            <div className="flex flex-col gap-1">
+                                <span>{p.name || "—"}</span>
+                                {p.identificationType === "SA_ID" && (
+                                    <div className="flex items-center gap-1 text-[9px] font-black text-green-700 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded-full w-fit uppercase">
+                                        <CheckCircle size={10} /> SA ID Holder
+                                    </div>
+                                )}
+                                {p.identificationType === "PASSPORT" && (
+                                    <div className={`flex items-center gap-1 text-[9px] font-black border px-1.5 py-0.5 rounded-full w-fit uppercase ${
+                                        p.passportCountry === "South Africa"
+                                        ? "text-green-700 bg-green-50 border-green-200"
+                                        : "text-blue-700 bg-blue-50 border-blue-200"
+                                    }`}>
+                                        <CheckCircle size={10} />
+                                        {p.passportCountry === "South Africa" ? "South African Passport" : `Passport Holder - ${p.passportCountry || "Unknown"}`}
+                                    </div>
+                                )}
+                            </div>
+                          </TableCell>
                           <TableCell>{p.email || "—"}</TableCell>
 
                           <TableCell>
                             <Badge variant="secondary">{normalizeRole(p.role)}</Badge>
+                          </TableCell>
+
+                          <TableCell>
+                            {p.identificationType === "SA_ID" ? (
+                                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-[10px]">SA ID</Badge>
+                            ) : p.identificationType === "PASSPORT" ? (
+                                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-[10px]">PASSPORT</Badge>
+                            ) : (
+                                <span className="text-xs opacity-40">N/A</span>
+                            )}
                           </TableCell>
 
                           <TableCell>
@@ -932,8 +969,16 @@ export default function ProvidersPage() {
       >
         <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden bg-white">
           <DialogHeader>
-            <DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
               Verification Documents - {selectedProvider?.name || "Provider"}
+              {selectedProvider?.identificationType === "SA_ID" && (
+                  <Badge className="bg-green-600 text-white border-none text-[10px]">🟢 SA ID HOLDER</Badge>
+              )}
+              {selectedProvider?.identificationType === "PASSPORT" && (
+                  <Badge className={`${selectedProvider.passportCountry === "South Africa" ? "bg-green-600" : "bg-blue-600"} text-white border-none text-[10px]`}>
+                      {selectedProvider.passportCountry === "South Africa" ? "🟢 SOUTH AFRICAN PASSPORT HOLDER" : `🔵 PASSPORT HOLDER – ${selectedProvider.passportCountry || "Unknown"}`}
+                  </Badge>
+              )}
             </DialogTitle>
           </DialogHeader>
 
@@ -973,10 +1018,16 @@ export default function ProvidersPage() {
 
                 {/* ✅ Phase 6: Final Approve Button */}
                 {selectedProvider && (tab === "pending" || tab === "rejected") && (
-                  <div className="flex justify-end gap-2 border-t pt-4">
+                  <div className="flex flex-col items-end gap-2 border-t pt-4">
+                    {selectedProvider.identificationType === "PASSPORT" && !selectedProvider.passportCountry && (
+                        <div className="text-[10px] text-red-600 font-black animate-pulse">
+                            ⚠️ BLOCKER: CANNOT APPROVE WITHOUT PASSPORT COUNTRY
+                        </div>
+                    )}
                     <Button
                       className="bg-green-600 hover:bg-green-700 text-white font-bold"
                       onClick={handleFinalApprove}
+                      disabled={selectedProvider.identificationType === "PASSPORT" && !selectedProvider.passportCountry}
                     >
                       FINAL APPROVE PROVIDER ✅
                     </Button>
