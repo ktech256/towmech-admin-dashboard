@@ -25,6 +25,16 @@ export const updatePartnerPortalStatus = async (id: string, payload: { status?: 
   return res.data;
 };
 
+export const createPartner = async (partner: any) => {
+  const res = await api.post("/api/admin/partners", partner);
+  return res.data;
+};
+
+export const regeneratePartnerToken = async (id: string) => {
+  const res = await api.post(`/api/admin/portal-control/partners/${id}/regenerate-token`);
+  return res.data;
+};
+
 export const fetchPartnerAuditLogs = async (params?: any) => {
   const res = await api.get("/api/admin/portal-control/audit-logs", { params });
   return res.data;

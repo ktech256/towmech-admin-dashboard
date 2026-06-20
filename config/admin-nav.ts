@@ -18,6 +18,7 @@ import {
   MessageCircle,
   UserCog,
   FileText,
+  Activity,
 } from "lucide-react";
 
 export type AdminNavItem = {
@@ -156,6 +157,13 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     name: "System Settings",
     href: "/dashboard/settings",
     icon: Settings,
+    permissionKey: "canManageSettings",
+  },
+
+  {
+    name: "Portal Control Center",
+    href: "/dashboard/settings/portal-control",
+    icon: Activity,
     permissionKey: "canManageSettings",
   },
 
