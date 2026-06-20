@@ -63,11 +63,18 @@ type Provider = {
 
 type VerificationDoc = {
   url?: string | null;
-  status?: "NOT_SUBMITTED" | "PENDING" | "APPROVED" | "REJECTED";
+  status?: "NOT_SUBMITTED" | "PENDING" | "APPROVED" | "REJECTED" | "VERIFIED" | "UPDATE_REQUIRED" | "EXPIRED";
   reason?: string | null;
   updatedAt?: string | null;
   submittedAt?: string | null;
   captureTimestamp?: string | null;
+
+  expiryDate?: string | null;
+  expiryType?: "NA" | "HAS_EXPIRY";
+  updateRequired?: boolean;
+  updateReason?: string | null;
+  gracePeriodEnd?: string | null;
+
   history?: Array<{
     url: string;
     status: string;
@@ -75,6 +82,8 @@ type VerificationDoc = {
     submittedAt?: string;
     updatedAt?: string;
     captureTimestamp?: string;
+    expiryDate?: string;
+    updateReason?: string;
   }>;
 };
 
@@ -281,6 +290,29 @@ export default function ProvidersPage() {
     }
   };
 
+  const handleRequireUpdate = async (field: string) => {
+    if (!selectedProvider) return;
+    const reason = prompt("Reason for document update (e.g. Expired, Blurry):");
+    if (reason === null) return;
+    try {
+      const res = await api.patch(`/api/admin/providers/providers/${selectedProvider._id}/documents/${field}/require-update`, { reason });
+      setDocs(res.data.verificationDocs);
+      alert("Update request sent to provider ✅");
+    } catch (err: any) {
+      alert(err?.response?.data?.message || "Update request failed");
+    }
+  };
+
+  const handleSetExpiry = async (field: string, expiryType: string, expiryDate?: string) => {
+    if (!selectedProvider) return;
+    try {
+      const res = await api.patch(`/api/admin/providers/providers/${selectedProvider._id}/documents/${field}/expiry`, { expiryDate, expiryType });
+      setDocs(res.data.verificationDocs);
+    } catch (err: any) {
+      alert(err?.response?.data?.message || "Expiry update failed");
+    }
+  };
+
   const handleFinalApprove = async () => {
     if (!selectedProvider) return;
     try {
@@ -369,20 +401,63 @@ export default function ProvidersPage() {
   const renderDoc = (label: string, doc?: VerificationDoc, field?: string) => {
     const url = doc?.url;
     const status = doc?.status || "NOT_SUBMITTED";
+    const expiryType = doc?.expiryType || "NA";
+    const expiryDate = doc?.expiryDate ? new Date(doc.expiryDate).toISOString().split('T')[0] : "";
+
+    const daysRemaining = doc?.expiryDate
+        ? Math.ceil((new Date(doc.expiryDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+        : null;
 
     return (
       <div className="space-y-2 rounded-lg border p-3 bg-white">
         <div className="flex items-center justify-between">
           <div className="text-sm font-medium text-slate-800">{label}</div>
           <Badge className={
-            status === "APPROVED" ? "bg-green-600 text-white" :
-            status === "REJECTED" ? "bg-red-600 text-white" :
+            status === "APPROVED" || status === "VERIFIED" ? "bg-green-600 text-white" :
+            status === "REJECTED" || status === "EXPIRED" ? "bg-red-600 text-white" :
+            status === "UPDATE_REQUIRED" ? "bg-orange-600 text-white" :
             status === "PENDING" ? "bg-yellow-600 text-white" :
             "bg-slate-200 text-slate-600"
           }>
             {status}
           </Badge>
         </div>
+
+        {/* Expiry Management */}
+        {field && (
+            <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-md border text-[10px]">
+                <div className="flex flex-col gap-1 flex-1">
+                    <label className="font-bold text-slate-500 uppercase">Expiry Type</label>
+                    <select
+                        value={expiryType}
+                        onChange={(e) => handleSetExpiry(field, e.target.value, expiryDate)}
+                        className="bg-white border rounded px-1 py-0.5 outline-none"
+                    >
+                        <option value="NA">N/A</option>
+                        <option value="HAS_EXPIRY">Has Expiry</option>
+                    </select>
+                </div>
+                {expiryType === "HAS_EXPIRY" && (
+                    <div className="flex flex-col gap-1 flex-1">
+                        <label className="font-bold text-slate-500 uppercase">Expiry Date</label>
+                        <input
+                            type="date"
+                            value={expiryDate}
+                            onChange={(e) => handleSetExpiry(field, expiryType, e.target.value)}
+                            className="bg-white border rounded px-1 py-0.5 outline-none"
+                        />
+                    </div>
+                )}
+                {daysRemaining !== null && (
+                    <div className="text-right">
+                        <div className="font-bold text-slate-400 uppercase">Remaining</div>
+                        <div className={daysRemaining < 0 ? "text-red-600 font-bold" : daysRemaining < 7 ? "text-orange-500 font-bold" : "text-green-600"}>
+                            {daysRemaining} Days
+                        </div>
+                    </div>
+                )}
+            </div>
+        )}
 
         {!url ? (
           <div className="text-sm text-muted-foreground py-4 text-center">No file uploaded yet.</div>
@@ -424,7 +499,7 @@ export default function ProvidersPage() {
                     variant="outline"
                     className="h-7 px-2 text-[10px] bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
                     onClick={() => handleApproveDoc(field)}
-                    disabled={status === "APPROVED"}
+                    disabled={status === "APPROVED" || status === "VERIFIED"}
                   >
                     Approve
                   </Button>
@@ -437,13 +512,21 @@ export default function ProvidersPage() {
                   >
                     Reject
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2 text-[10px] bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                    onClick={() => handleRequireUpdate(field)}
+                  >
+                    Update Doc
+                  </Button>
                 </div>
               )}
             </div>
 
-            {doc?.reason && (
+            {(doc?.reason || doc?.updateReason) && (
               <div className="rounded bg-red-50 p-2 text-[10px] text-red-700 border border-red-100">
-                <span className="font-bold">REJECT REASON:</span> {doc.reason}
+                <span className="font-bold">{status === "UPDATE_REQUIRED" ? "UPDATE REASON:" : "REJECT REASON:"}</span> {doc.reason || doc.updateReason}
               </div>
             )}
 
