@@ -63,6 +63,7 @@ type Provider = {
   identificationType?: "SA_ID" | "PASSPORT";
   identificationNumber?: string;
   passportCountry?: string | null;
+  verifiedCountry?: string | null;
 };
 
 type VerificationDoc = {
@@ -809,12 +810,12 @@ export default function ProvidersPage() {
                                 )}
                                 {p.identificationType === "PASSPORT" && (
                                     <div className={`flex items-center gap-1 text-[9px] font-black border px-1.5 py-0.5 rounded-full w-fit uppercase ${
-                                        p.passportCountry === "South Africa"
+                                        (p.verifiedCountry === "South Africa" || p.passportCountry === "South Africa")
                                         ? "text-green-700 bg-green-50 border-green-200"
                                         : "text-blue-700 bg-blue-50 border-blue-200"
                                     }`}>
                                         <CheckCircle size={10} />
-                                        {p.passportCountry === "South Africa" ? "South African Passport" : `Passport Holder - ${p.passportCountry || "Unknown"}`}
+                                        {(p.verifiedCountry === "South Africa" || p.passportCountry === "South Africa") ? "South African Passport" : `Passport Holder - ${p.verifiedCountry || p.passportCountry || "Unknown"}`}
                                     </div>
                                 )}
                             </div>
@@ -884,26 +885,15 @@ export default function ProvidersPage() {
                               Docs
                             </Button>
 
-                            {/* ✅ Approve should exist for rejected too */}
-                            {(tab === "pending" || tab === "rejected") && (
+                            {/* ✅ Approve/Reject removed from Pending list per Change 1 */}
+                            {/* ✅ Reject removed from Approved list per Change 2 */}
+                            {tab === "rejected" && (
                               <Button
                                 size="sm"
                                 disabled={busy}
                                 onClick={() => handleApprove(p._id)}
                               >
                                 {busy ? "..." : "Approve"}
-                              </Button>
-                            )}
-
-                            {/* ✅ Reject available on pending + approved (optional) */}
-                            {tab !== "rejected" && (
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                disabled={busy}
-                                onClick={() => openReject(p)}
-                              >
-                                Reject
                               </Button>
                             )}
 
@@ -975,8 +965,8 @@ export default function ProvidersPage() {
                   <Badge className="bg-green-600 text-white border-none text-[10px]">🟢 SA ID HOLDER</Badge>
               )}
               {selectedProvider?.identificationType === "PASSPORT" && (
-                  <Badge className={`${selectedProvider.passportCountry === "South Africa" ? "bg-green-600" : "bg-blue-600"} text-white border-none text-[10px]`}>
-                      {selectedProvider.passportCountry === "South Africa" ? "🟢 SOUTH AFRICAN PASSPORT HOLDER" : `🔵 PASSPORT HOLDER – ${selectedProvider.passportCountry || "Unknown"}`}
+                  <Badge className={`${(selectedProvider.verifiedCountry === "South Africa" || selectedProvider.passportCountry === "South Africa") ? "bg-green-600" : "bg-blue-600"} text-white border-none text-[10px]`}>
+                      {(selectedProvider.verifiedCountry === "South Africa" || selectedProvider.passportCountry === "South Africa") ? "🟢 SOUTH AFRICAN PASSPORT HOLDER" : `🔵 PASSPORT HOLDER – ${selectedProvider.verifiedCountry || selectedProvider.passportCountry || "Unknown"}`}
                   </Badge>
               )}
             </DialogTitle>
