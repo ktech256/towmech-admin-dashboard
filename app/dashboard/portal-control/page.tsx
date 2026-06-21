@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import api from "@/lib/api/axios";
 import { ModuleHeader } from "@/components/dashboard/module-header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -40,6 +41,10 @@ export default function PortalControlCenter() {
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+
+  // Test Email State
+  const [testEmail, setTestEmail] = useState("");
+  const [testingEmail, setTestingEmail] = useState(false);
 
   // Create Fleet State
   const [isAddFleetOpen, setIsAddFleetOpen] = useState(false);
@@ -126,6 +131,20 @@ export default function PortalControlCenter() {
      } catch (err) {
         toast.error("Resend failed");
      }
+  };
+
+  const handleTestEmail = async () => {
+    if (!testEmail) return;
+    try {
+      setTestingEmail(true);
+      await api.post("/api/admin/portal-control/test-email", { email: testEmail });
+      toast.success("Test email dispatched! Check your inbox.");
+      setTestEmail("");
+    } catch (err) {
+      toast.error("Test email failed. Check SendGrid configuration.");
+    } finally {
+      setTestingEmail(false);
+    }
   };
 
   const filteredPartners = partners.filter(p =>
@@ -251,6 +270,33 @@ export default function PortalControlCenter() {
                     <Power className="h-5 w-5" />
                     KILL ALL ACTIVE PARTNER SESSIONS
                  </Button>
+              </CardContent>
+           </Card>
+
+           <Card className="md:col-span-2 border-orange-100 bg-orange-50/10">
+              <CardHeader>
+                 <CardTitle className="flex items-center gap-2">
+                    <History className="h-5 w-5 text-orange-500" />
+                    SendGrid Email Engine Verification
+                 </CardTitle>
+                 <CardDescription>Verify that the SendGrid service is correctly configured by sending a test email.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                 <div className="flex gap-4 max-w-xl">
+                    <Input
+                       placeholder="Enter your email to receive test..."
+                       value={testEmail}
+                       onChange={(e) => setTestEmail(e.target.value)}
+                       className="bg-white"
+                    />
+                    <Button
+                       onClick={handleTestEmail}
+                       disabled={testingEmail || !testEmail}
+                       className="gap-2 shrink-0"
+                    >
+                       {testingEmail ? "Sending..." : "Send Test Email"}
+                    </Button>
+                 </div>
               </CardContent>
            </Card>
         </div>
