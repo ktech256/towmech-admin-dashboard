@@ -31,8 +31,10 @@ import {
   updatePartnerPortalStatus,
   fetchPartnerAuditLogs,
   createPartner,
-  regeneratePartnerToken
+  regeneratePartnerToken,
+  updatePartnerDetails
 } from "@/lib/api/portal-control";
+import Link from "next/link";
 
 export default function PortalControlCenter() {
   const [activeTab, setActiveTab] = useState<"master" | "fleet" | "insurance" | "logs">("master");
@@ -57,6 +59,10 @@ export default function PortalControlCenter() {
     country: "South Africa",
     countryCode: "ZA"
   });
+
+  // Edit Partner State
+  const [isEditPartnerOpen, setIsEditPartnerOpen] = useState(false);
+  const [editingPartner, setEditingPartner] = useState<any>(null);
 
   const loadAll = async () => {
     setLoading(true);
@@ -131,6 +137,20 @@ export default function PortalControlCenter() {
      } catch (err) {
         toast.error("Resend failed");
      }
+  };
+
+  const handleEditPartner = async () => {
+    try {
+      await updatePartnerDetails(editingPartner._id, {
+        ...editingPartner,
+        type: editingPartner.type // backend needs type to identify collection
+      });
+      toast.success("Partner updated successfully ✅");
+      setIsEditPartnerOpen(false);
+      loadAll();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Update failed");
+    }
   };
 
   const handleTestEmail = async () => {
@@ -366,9 +386,17 @@ export default function PortalControlCenter() {
                                 </div>
                              </TableCell>
                              <TableCell className="text-right px-6 space-x-1">
-                                <Button variant="outline" size="icon" className="h-8 w-8" title="View Live Map"><Map className="h-3.5 w-3.5" /></Button>
-                                <Button variant="outline" size="icon" className="h-8 w-8" title="Regenerate Codes" onClick={() => handleResendInvitation(p._id, "FLEET")}><RefreshCcw className="h-3.5 w-3.5" /></Button>
-                                <Button variant="outline" size="icon" className="h-8 w-8" title="Generate Statement"><FileText className="h-3.5 w-3.5" /></Button>
+                                <Link href={`/dashboard/portal-control/partners/${p._id}?type=FLEET`}>
+                                   <Button variant="outline" size="sm" className="h-8 px-3 font-bold text-[10px] uppercase">Manage</Button>
+                                </Link>
+                                <Button
+                                   variant="outline"
+                                   size="sm"
+                                   className="h-8 px-3 font-bold text-[10px] uppercase"
+                                   onClick={() => { setEditingPartner(p); setIsEditPartnerOpen(true); }}
+                                >
+                                   Edit
+                                </Button>
                                 <Button
                                   variant={p.isSuspended ? "outline" : "destructive"}
                                   size="sm"
@@ -455,8 +483,17 @@ export default function PortalControlCenter() {
                                 </Badge>
                              </TableCell>
                              <TableCell className="text-right px-6 space-x-1">
-                                <Button variant="outline" size="sm" className="h-8 px-3 font-bold text-[10px] uppercase">Codes</Button>
-                                <Button variant="outline" size="sm" className="h-8 px-3 font-bold text-[10px] uppercase">Utilization</Button>
+                                <Link href={`/dashboard/portal-control/partners/${p._id}?type=INSURANCE`}>
+                                   <Button variant="outline" size="sm" className="h-8 px-3 font-bold text-[10px] uppercase">Manage</Button>
+                                </Link>
+                                <Button
+                                   variant="outline"
+                                   size="sm"
+                                   className="h-8 px-3 font-bold text-[10px] uppercase"
+                                   onClick={() => { setEditingPartner(p); setIsEditPartnerOpen(true); }}
+                                >
+                                   Edit
+                                </Button>
                                 <Button
                                   variant={p.isSuspended ? "outline" : "destructive"}
                                   size="sm"
@@ -625,6 +662,62 @@ export default function PortalControlCenter() {
              >
                 Create & Invite
              </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* EDIT PARTNER DIALOG */}
+      <Dialog open={isEditPartnerOpen} onOpenChange={setIsEditPartnerOpen}>
+        <DialogContent className="max-w-md bg-white">
+          <DialogHeader>
+            <DialogTitle>Edit Partner Details</DialogTitle>
+            <DialogDescription>Update the primary information for this ecosystem partner.</DialogDescription>
+          </DialogHeader>
+          {editingPartner && (
+            <div className="space-y-4 py-4">
+              <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-slate-500">Company Name</label>
+                  <Input
+                    value={editingPartner.name}
+                    onChange={(e) => setEditingPartner({...editingPartner, name: e.target.value})}
+                  />
+              </div>
+              <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-slate-500">Partner Code</label>
+                  <Input
+                    value={editingPartner.partnerCode}
+                    onChange={(e) => setEditingPartner({...editingPartner, partnerCode: e.target.value.toUpperCase()})}
+                  />
+              </div>
+              <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-slate-500">Admin Email Address</label>
+                  <Input
+                    type="email"
+                    value={editingPartner.contactEmail}
+                    onChange={(e) => setEditingPartner({...editingPartner, contactEmail: e.target.value})}
+                  />
+              </div>
+              <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-slate-500">Contact Phone Number</label>
+                  <Input
+                    value={editingPartner.contactPhone}
+                    onChange={(e) => setEditingPartner({...editingPartner, contactPhone: e.target.value})}
+                  />
+              </div>
+              <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-slate-500">Workspace Status</label>
+                  <Badge className="ml-2 bg-blue-50 text-blue-700">{editingPartner.countryCode}</Badge>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setIsEditPartnerOpen(false)}>Cancel</Button>
+            <Button
+                onClick={handleEditPartner}
+                className="bg-slate-900 text-white font-bold"
+            >
+                Save Changes ✅
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

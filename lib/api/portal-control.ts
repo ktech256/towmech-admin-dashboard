@@ -36,6 +36,21 @@ export const regeneratePartnerToken = async (id: string, type: string) => {
   return res.data;
 };
 
+export const updatePartnerDetails = async (id: string, payload: any) => {
+  const res = await api.patch(`/api/admin/portal-control/partners/${id}`, payload);
+  return res.data;
+};
+
+export const fetchPartnerDetails = async (id: string, type: string) => {
+  const res = await api.get(`/api/admin/portal-control/partners/${id}/details`, { params: { type } });
+  return res.data;
+};
+
+export const generatePartnerCodes = async (id: string, payload: { type: string; count: number; expiresInDays: number }) => {
+  const res = await api.post(`/api/admin/portal-control/partners/${id}/codes`, payload);
+  return res.data;
+};
+
 export const fetchPartnerAuditLogs = async (params?: any) => {
   const res = await api.get("/api/admin/portal-control/audit-logs", { params });
   return res.data;
