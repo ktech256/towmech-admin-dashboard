@@ -766,11 +766,23 @@ export default function ProvidersPage() {
 
   const verificationPill = (p: Provider) => {
     const v = String(p.providerProfile?.verificationStatus || "").toUpperCase();
-    if (!v) return <Badge variant="secondary">—</Badge>;
-    if (v.includes("APPROV")) return <Badge className="bg-green-600 text-white">APPROVED</Badge>;
-    if (v.includes("REJECT")) return <Badge className="bg-red-600 text-white">REJECTED</Badge>;
-    if (v.includes("PEND")) return <Badge className="bg-yellow-600 text-white">PENDING</Badge>;
-    return <Badge variant="secondary">{v}</Badge>;
+    const isCompanyVerified = p.providerProfile?.verificationDocs?.companyVerification?.status === "VERIFIED";
+
+    return (
+      <div className="flex flex-col gap-1">
+        {v === "APPROVED" ? (
+          <Badge className="bg-green-600 text-white">APPROVED</Badge>
+        ) : v === "REJECTED" ? (
+          <Badge className="bg-red-600 text-white">REJECTED</Badge>
+        ) : (
+          <Badge className="bg-yellow-600 text-white">PENDING</Badge>
+        )}
+
+        {isCompanyVerified && (
+          <Badge className="bg-blue-600 text-white text-[9px] py-0 h-4">COMPANY VERIFIED</Badge>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -1057,7 +1069,8 @@ export default function ProvidersPage() {
                 </div>
 
                 {/* ✅ Phase 6: Final Approve Button */}
-                {selectedProvider && (tab === "pending" || tab === "rejected") && (
+                {selectedProvider &&
+                 selectedProvider.providerProfile?.verificationStatus !== "APPROVED" && (
                   <div className="flex flex-col items-end gap-2 border-t pt-4">
                     {selectedProvider.identificationType === "PASSPORT" && !selectedProvider.passportCountry && (
                         <div className="text-[10px] text-red-600 font-black animate-pulse">
