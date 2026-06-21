@@ -83,7 +83,13 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     name: "Partners",
     href: "/dashboard/partners",
     icon: Users,
-    permissionKey: "canManageUsers",
+    permissionKey: ["canManageUsers", "canVerifyProviders"],
+  },
+  {
+    name: "Portal Control Center",
+    href: "/dashboard/portal-control",
+    icon: Activity,
+    permissionKey: ["canManageSettings", "canVerifyProviders"],
   },
 
   // Payments / Pricing
@@ -163,13 +169,6 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     name: "System Settings",
     href: "/dashboard/settings",
     icon: Settings,
-    permissionKey: "canManageSettings",
-  },
-
-  {
-    name: "Portal Control Center",
-    href: "/dashboard/portal-control",
-    icon: Activity,
     permissionKey: "canManageSettings",
   },
 

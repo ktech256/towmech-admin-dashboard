@@ -11,6 +11,7 @@ const navItems = [
   { label: "Users", href: "/dashboard/users", icon: "👥" },
   { label: "Providers", href: "/dashboard/providers", icon: "🚚" },
   { label: "Partners", href: "/dashboard/partners", icon: "🏢" },
+  { label: "Portal Control Center", href: "/dashboard/portal-control", icon: "🕹️" },
   { label: "Jobs", href: "/dashboard/jobs", icon: "🧾" },
   { label: "Payments", href: "/dashboard/payments", icon: "💳" },
   { label: "Provider Payouts", href: "/dashboard/payouts", icon: "💰" },
@@ -26,7 +27,6 @@ const navItems = [
 
   // ✅ fixed to match admin-nav + your settings page
   { label: "System Settings", href: "/dashboard/settings", icon: "⚙️" },
-  { label: "Portal Control Center", href: "/dashboard/portal-control", icon: "🕹️" },
 
   { label: "Countries", href: "/dashboard/countries", icon: "🌍" },
   { label: "Country Services", href: "/dashboard/country-services", icon: "🧩" },
