@@ -26,7 +26,7 @@ const navItems = [
 
   // ✅ fixed to match admin-nav + your settings page
   { label: "System Settings", href: "/dashboard/settings", icon: "⚙️" },
-  { label: "Portal Control Center", href: "/dashboard/settings/portal-control", icon: "🕹️" },
+  { label: "Portal Control Center", href: "/dashboard/portal-control", icon: "🕹️" },
 
   { label: "Countries", href: "/dashboard/countries", icon: "🌍" },
   { label: "Country Services", href: "/dashboard/country-services", icon: "🧩" },

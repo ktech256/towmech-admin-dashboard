@@ -79,6 +79,12 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     icon: Briefcase,
     permissionKey: "canManageJobs",
   },
+  {
+    name: "Partners",
+    href: "/dashboard/partners",
+    icon: Users,
+    permissionKey: "canManageUsers",
+  },
 
   // Payments / Pricing
   {
@@ -162,7 +168,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
 
   {
     name: "Portal Control Center",
-    href: "/dashboard/settings/portal-control",
+    href: "/dashboard/portal-control",
     icon: Activity,
     permissionKey: "canManageSettings",
   },

@@ -43,7 +43,8 @@ export default function PortalControlCenter() {
 
   // Create Fleet State
   const [isAddFleetOpen, setIsAddFleetOpen] = useState(false);
-  const [newFleet, setNewFleet] = useState({
+  const [isAddInsurerOpen, setIsAddInsurerOpen] = useState(false);
+  const [newPartner, setNewPartner] = useState({
     name: "",
     partnerCode: "",
     contactEmail: "",
@@ -104,25 +105,26 @@ export default function PortalControlCenter() {
     }
   };
 
-  const handleCreateFleet = async () => {
+  const handleCreatePartner = async (type: "FLEET" | "INSURANCE") => {
      try {
-        await createPartner({ ...newFleet, type: "FLEET" });
-        toast.success("Fleet company created and invitation sent! ✅");
+        await createPartner({ ...newPartner, type });
+        toast.success(`${type} company created and invitation sent! ✅`);
         setIsAddFleetOpen(false);
-        setNewFleet({ name: "", partnerCode: "", contactEmail: "", contactPhone: "", country: "South Africa", countryCode: "ZA" });
+        setIsAddInsurerOpen(false);
+        setNewPartner({ name: "", partnerCode: "", contactEmail: "", contactPhone: "", country: "South Africa", countryCode: "ZA" });
         loadAll();
      } catch (err: any) {
-        toast.error(err.response?.data?.message || "Failed to create fleet");
+        toast.error(err.response?.data?.message || "Failed to create partner");
      }
   };
 
-  const handleRegenerateCode = async (id: string) => {
-     if (!confirm("Regenerate driver verification codes for this fleet?")) return;
+  const handleResendInvitation = async (id: string, type: string) => {
      try {
-        await regeneratePartnerToken(id);
-        toast.success("Codes regenerated successfully ✅");
+        await regeneratePartnerToken(id, type);
+        toast.success("Invitation email resent successfully ✅");
+        loadAll();
      } catch (err) {
-        toast.error("Regeneration failed");
+        toast.error("Resend failed");
      }
   };
 
@@ -268,7 +270,7 @@ export default function PortalControlCenter() {
               </div>
               <Button className="gap-2 bg-orange-600 hover:bg-orange-700 font-bold" onClick={() => setIsAddFleetOpen(true)}>
                  <Plus className="h-4 w-4" />
-                 Add Fleet Company
+                 Onboard Fleet Partner
               </Button>
            </div>
 
@@ -279,9 +281,9 @@ export default function PortalControlCenter() {
                        <TableRow>
                           <TableHead className="px-6">Partner Information</TableHead>
                           <TableHead>Code</TableHead>
+                          <TableHead>Invitation</TableHead>
                           <TableHead>Status</TableHead>
                           <TableHead>Network</TableHead>
-                          <TableHead>Revenue (Est.)</TableHead>
                           <TableHead className="text-right px-6">Actions</TableHead>
                        </TableRow>
                     </TableHeader>
@@ -295,6 +297,18 @@ export default function PortalControlCenter() {
                              </TableCell>
                              <TableCell className="font-mono text-xs font-bold text-blue-600 tracking-wider">{p.partnerCode}</TableCell>
                              <TableCell>
+                                <div className="flex flex-col gap-1">
+                                   <Badge variant="secondary" className="w-fit text-[9px]">{p.invitationStatus || "Not Sent"}</Badge>
+                                   <Button
+                                      variant="link"
+                                      className="h-auto p-0 text-[9px] text-blue-600 justify-start"
+                                      onClick={() => handleResendInvitation(p._id, "FLEET")}
+                                   >
+                                      Resend Email
+                                   </Button>
+                                </div>
+                             </TableCell>
+                             <TableCell>
                                 <Badge className={p.isSuspended ? "bg-red-600" : "bg-green-600"}>
                                    {p.isSuspended ? "SUSPENDED" : "ACTIVE"}
                                 </Badge>
@@ -305,25 +319,9 @@ export default function PortalControlCenter() {
                                    <span className="text-[10px] text-orange-600 font-bold flex items-center gap-1"><Activity className="w-2.5 h-2.5"/> Active Jobs: {p.metrics?.activeJobs || 0}</span>
                                 </div>
                              </TableCell>
-                             <TableCell>
-                                <div className="space-y-1">
-                                   <div className="flex justify-between items-center gap-4 border-b border-slate-50 pb-0.5">
-                                      <span className="text-[9px] text-slate-400 font-bold">TODAY</span>
-                                      <span className="text-xs font-black text-slate-900">R{(p.metrics?.todayRevenue || 0).toFixed(2)}</span>
-                                   </div>
-                                   <div className="flex justify-between items-center gap-4 border-b border-slate-50 pb-0.5">
-                                      <span className="text-[9px] text-slate-400 font-bold">WEEKLY</span>
-                                      <span className="text-xs font-bold text-slate-700">R{(p.metrics?.weeklyRevenue || 0).toFixed(2)}</span>
-                                   </div>
-                                   <div className="flex justify-between items-center gap-4">
-                                      <span className="text-[9px] text-slate-400 font-bold">MONTHLY</span>
-                                      <span className="text-xs font-bold text-slate-700">R{(p.metrics?.monthlyRevenue || 0).toFixed(2)}</span>
-                                   </div>
-                                </div>
-                             </TableCell>
                              <TableCell className="text-right px-6 space-x-1">
                                 <Button variant="outline" size="icon" className="h-8 w-8" title="View Live Map"><Map className="h-3.5 w-3.5" /></Button>
-                                <Button variant="outline" size="icon" className="h-8 w-8" title="Regenerate Codes" onClick={() => handleRegenerateCode(p._id)}><RefreshCcw className="h-3.5 w-3.5" /></Button>
+                                <Button variant="outline" size="icon" className="h-8 w-8" title="Regenerate Codes" onClick={() => handleResendInvitation(p._id, "FLEET")}><RefreshCcw className="h-3.5 w-3.5" /></Button>
                                 <Button variant="outline" size="icon" className="h-8 w-8" title="Generate Statement"><FileText className="h-3.5 w-3.5" /></Button>
                                 <Button
                                   variant={p.isSuspended ? "outline" : "destructive"}
@@ -344,77 +342,91 @@ export default function PortalControlCenter() {
       )}
 
       {activeTab === "insurance" && (
-        <Card>
-           <CardHeader>
-              <div className="flex justify-between items-center">
-                 <div>
-                    <CardTitle>Insurance Ecosystem</CardTitle>
-                    <CardDescription>Manage insurance partners, codes, and utilization reports.</CardDescription>
-                 </div>
-                 <div className="relative w-64">
-                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search insurers..."
-                      className="pl-10"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                    />
-                 </div>
+        <div className="space-y-6">
+           <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+              <div className="relative flex-1 max-w-sm">
+                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                 <Input
+                   placeholder="Search insurers..."
+                   className="pl-10"
+                   value={search}
+                   onChange={(e) => setSearch(e.target.value)}
+                 />
               </div>
-           </CardHeader>
-           <CardContent className="p-0">
-              <Table>
-                 <TableHeader className="bg-slate-50/50">
-                    <TableRow>
-                       <TableHead className="px-6">Insurance Partner</TableHead>
-                       <TableHead>Code</TableHead>
-                       <TableHead>Usage (Total)</TableHead>
-                       <TableHead>Active Claims</TableHead>
-                       <TableHead>Status</TableHead>
-                       <TableHead className="text-right px-6">Actions</TableHead>
-                    </TableRow>
-                 </TableHeader>
-                 <TableBody>
-                    {filteredPartners.filter(p => p.type === "INSURANCE").map((p) => (
-                       <TableRow key={p._id}>
-                          <TableCell className="px-6 py-4">
-                             <div className="font-bold text-slate-800">{p.name}</div>
-                             <div className="text-[10px] text-muted-foreground">{p.contactEmail}</div>
-                             <Badge variant="secondary" className="text-[8px] mt-1 uppercase">{p.countryCode}</Badge>
-                          </TableCell>
-                          <TableCell className="font-mono text-xs font-bold text-blue-600">{p.partnerCode}</TableCell>
-                          <TableCell>
-                             <div className="flex flex-col">
-                                <span className="text-xs font-bold">142 Codes</span>
-                                <span className="text-[10px] text-slate-500">Utilization: 84%</span>
-                             </div>
-                          </TableCell>
-                          <TableCell>
-                             <div className="text-xs font-black text-orange-600">{p.metrics?.activeJobs || 0}</div>
-                          </TableCell>
-                          <TableCell>
-                             <Badge className={p.isSuspended ? "bg-red-600" : "bg-green-600"}>
-                                {p.isSuspended ? "SUSPENDED" : "ACTIVE"}
-                             </Badge>
-                          </TableCell>
-                          <TableCell className="text-right px-6 space-x-1">
-                             <Button variant="outline" size="sm" className="h-8 px-3 font-bold text-[10px] uppercase">Codes</Button>
-                             <Button variant="outline" size="sm" className="h-8 px-3 font-bold text-[10px] uppercase">Utilization</Button>
-                             <Button
-                               variant={p.isSuspended ? "outline" : "destructive"}
-                               size="sm"
-                               className="h-8 px-3 font-bold text-[10px] uppercase"
-                               onClick={() => togglePartnerSuspension(p._id, p.isSuspended, "INSURANCE")}
-                             >
-                                {p.isSuspended ? "Activate" : "Suspend"}
-                             </Button>
-                          </TableCell>
+              <Button className="gap-2 bg-blue-600 hover:bg-blue-700 font-bold" onClick={() => setIsAddInsurerOpen(true)}>
+                 <Plus className="h-4 w-4" />
+                 Onboard Insurance Partner
+              </Button>
+           </div>
+
+           <Card>
+              <CardContent className="p-0">
+                 <Table>
+                    <TableHeader className="bg-slate-50/50">
+                       <TableRow>
+                          <TableHead className="px-6">Insurance Partner</TableHead>
+                          <TableHead>Code</TableHead>
+                          <TableHead>Invitation</TableHead>
+                          <TableHead>Usage (Total)</TableHead>
+                          <TableHead>Active Claims</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="text-right px-6">Actions</TableHead>
                        </TableRow>
-                    ))}
-                 </TableBody>
-              </Table>
-           </CardContent>
-        </Card>
+                    </TableHeader>
+                    <TableBody>
+                       {filteredPartners.filter(p => p.type === "INSURANCE").map((p) => (
+                          <TableRow key={p._id}>
+                             <TableCell className="px-6 py-4">
+                                <div className="font-bold text-slate-800">{p.name}</div>
+                                <div className="text-[10px] text-muted-foreground">{p.contactEmail}</div>
+                                <Badge variant="secondary" className="text-[8px] mt-1 uppercase">{p.countryCode}</Badge>
+                             </TableCell>
+                             <TableCell className="font-mono text-xs font-bold text-blue-600">{p.partnerCode}</TableCell>
+                             <TableCell>
+                                <div className="flex flex-col gap-1">
+                                   <Badge variant="secondary" className="w-fit text-[9px]">{p.invitationStatus || "Not Sent"}</Badge>
+                                   <Button
+                                      variant="link"
+                                      className="h-auto p-0 text-[9px] text-blue-600 justify-start"
+                                      onClick={() => handleResendInvitation(p._id, "INSURANCE")}
+                                   >
+                                      Resend Email
+                                   </Button>
+                                </div>
+                             </TableCell>
+                             <TableCell>
+                                <div className="flex flex-col">
+                                   <span className="text-xs font-bold">142 Codes</span>
+                                   <span className="text-[10px] text-slate-500">Utilization: 84%</span>
+                                </div>
+                             </TableCell>
+                             <TableCell>
+                                <div className="text-xs font-black text-orange-600">{p.metrics?.activeJobs || 0}</div>
+                             </TableCell>
+                             <TableCell>
+                                <Badge className={p.isSuspended ? "bg-red-600" : "bg-green-600"}>
+                                   {p.isSuspended ? "SUSPENDED" : "ACTIVE"}
+                                </Badge>
+                             </TableCell>
+                             <TableCell className="text-right px-6 space-x-1">
+                                <Button variant="outline" size="sm" className="h-8 px-3 font-bold text-[10px] uppercase">Codes</Button>
+                                <Button variant="outline" size="sm" className="h-8 px-3 font-bold text-[10px] uppercase">Utilization</Button>
+                                <Button
+                                  variant={p.isSuspended ? "outline" : "destructive"}
+                                  size="sm"
+                                  className="h-8 px-3 font-bold text-[10px] uppercase"
+                                  onClick={() => togglePartnerSuspension(p._id, p.isSuspended, "INSURANCE")}
+                                >
+                                   {p.isSuspended ? "Activate" : "Suspend"}
+                                </Button>
+                             </TableCell>
+                          </TableRow>
+                       ))}
+                    </TableBody>
+                 </Table>
+              </CardContent>
+           </Card>
+        </div>
       )}
 
       {activeTab === "logs" && (
@@ -473,16 +485,16 @@ export default function PortalControlCenter() {
                 <label className="text-[10px] font-black uppercase text-slate-500">Fleet Company Name</label>
                 <Input
                    placeholder="e.g. Towing Pros South"
-                   value={newFleet.name}
-                   onChange={(e) => setNewFleet({...newFleet, name: e.target.value})}
+                   value={newPartner.name}
+                   onChange={(e) => setNewPartner({...newPartner, name: e.target.value})}
                 />
              </div>
              <div className="space-y-1">
                 <label className="text-[10px] font-black uppercase text-slate-500">Fleet Partner Code</label>
                 <Input
                    placeholder="e.g. TP-SOUTH"
-                   value={newFleet.partnerCode}
-                   onChange={(e) => setNewFleet({...newFleet, partnerCode: e.target.value.toUpperCase()})}
+                   value={newPartner.partnerCode}
+                   onChange={(e) => setNewPartner({...newPartner, partnerCode: e.target.value.toUpperCase()})}
                 />
              </div>
              <div className="space-y-1">
@@ -490,25 +502,80 @@ export default function PortalControlCenter() {
                 <Input
                    type="email"
                    placeholder="admin@company.com"
-                   value={newFleet.contactEmail}
-                   onChange={(e) => setNewFleet({...newFleet, contactEmail: e.target.value})}
+                   value={newPartner.contactEmail}
+                   onChange={(e) => setNewPartner({...newPartner, contactEmail: e.target.value})}
                 />
              </div>
              <div className="space-y-1">
                 <label className="text-[10px] font-black uppercase text-slate-500">Contact Phone Number</label>
                 <Input
                    placeholder="+27..."
-                   value={newFleet.contactPhone}
-                   onChange={(e) => setNewFleet({...newFleet, contactPhone: e.target.value})}
+                   value={newPartner.contactPhone}
+                   onChange={(e) => setNewPartner({...newPartner, contactPhone: e.target.value})}
                 />
              </div>
           </div>
           <DialogFooter>
              <Button variant="ghost" onClick={() => setIsAddFleetOpen(false)}>Cancel</Button>
              <Button
-                onClick={handleCreateFleet}
-                disabled={!newFleet.name || !newFleet.partnerCode || !newFleet.contactEmail}
+                onClick={() => handleCreatePartner("FLEET")}
+                disabled={!newPartner.name || !newPartner.partnerCode || !newPartner.contactEmail}
                 className="bg-orange-600 hover:bg-orange-700"
+             >
+                Create & Invite
+             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* CREATE INSURANCE DIALOG */}
+      <Dialog open={isAddInsurerOpen} onOpenChange={setIsAddInsurerOpen}>
+        <DialogContent className="max-w-md bg-white">
+          <DialogHeader>
+            <DialogTitle>Onboard Insurance Partner</DialogTitle>
+            <DialogDescription>Create a new insurance company and send an activation invite.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+             <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-slate-500">Insurance Company Name</label>
+                <Input
+                   placeholder="e.g. Shield Insurance"
+                   value={newPartner.name}
+                   onChange={(e) => setNewPartner({...newPartner, name: e.target.value})}
+                />
+             </div>
+             <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-slate-500">Partner Code</label>
+                <Input
+                   placeholder="e.g. SHIELD-01"
+                   value={newPartner.partnerCode}
+                   onChange={(e) => setNewPartner({...newPartner, partnerCode: e.target.value.toUpperCase()})}
+                />
+             </div>
+             <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-slate-500">Admin Email Address</label>
+                <Input
+                   type="email"
+                   placeholder="admin@shield.com"
+                   value={newPartner.contactEmail}
+                   onChange={(e) => setNewPartner({...newPartner, contactEmail: e.target.value})}
+                />
+             </div>
+             <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-slate-500">Contact Phone Number</label>
+                <Input
+                   placeholder="+27..."
+                   value={newPartner.contactPhone}
+                   onChange={(e) => setNewPartner({...newPartner, contactPhone: e.target.value})}
+                />
+             </div>
+          </div>
+          <DialogFooter>
+             <Button variant="ghost" onClick={() => setIsAddInsurerOpen(false)}>Cancel</Button>
+             <Button
+                onClick={() => handleCreatePartner("INSURANCE")}
+                disabled={!newPartner.name || !newPartner.partnerCode || !newPartner.contactEmail}
+                className="bg-blue-600 hover:bg-blue-700"
              >
                 Create & Invite
              </Button>
