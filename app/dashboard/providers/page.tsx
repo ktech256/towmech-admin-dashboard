@@ -34,7 +34,7 @@ import {
 } from "@/components/ui/dialog";
 
 import { useCountryStore } from "@/lib/store/countryStore";
-import { TrendingUp, BarChart, DollarSign, XCircle, CheckCircle } from "lucide-react";
+import { TrendingUp, BarChart, DollarSign, XCircle, CheckCircle, Shield } from "lucide-react";
 
 type Provider = {
   _id: string;
@@ -98,6 +98,13 @@ type VerificationDoc = {
   updateRequired?: boolean;
   updateReason?: string | null;
   gracePeriodEnd?: string | null;
+
+  // ✅ Phase 1: Smart ID Metadata
+  detectedCountry?: string;
+  ocrText?: string;
+  documentNumber?: string;
+  documentType?: string;
+  ocrConfidence?: number;
 
   history?: Array<{
     url: string;
@@ -485,6 +492,45 @@ export default function ProvidersPage() {
 
     return (
       <div className="space-y-2 rounded-lg border p-3 bg-white">
+        {field === "idDocument" && doc && doc.detectedCountry && (
+            <div className="bg-slate-900 text-white rounded-lg p-3 mb-4 space-y-2 shadow-xl border border-blue-500/30">
+                <div className="text-[10px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-2">
+                   <Shield size={12}/> Smart ID OCR Intelligence
+                </div>
+                <div className="grid grid-cols-2 gap-4 pt-2">
+                    <div>
+                        <div className="text-[9px] text-slate-400 uppercase font-bold">Detected Country</div>
+                        <div className="text-sm font-black text-blue-100 uppercase">
+                            {doc.detectedCountry}
+                        </div>
+                    </div>
+                    <div>
+                        <div className="text-[9px] text-slate-400 uppercase font-bold">Document Number</div>
+                        <div className="text-sm font-black text-blue-100 tracking-wider">
+                            {doc.documentNumber || "—"}
+                        </div>
+                    </div>
+                </div>
+                <div className="pt-2 border-t border-slate-800">
+                    <div className="text-[9px] text-slate-400 uppercase font-bold mb-1">OCR Confidence Score</div>
+                    <div className="flex items-center gap-3">
+                         <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                             <div className="h-full bg-green-500" style={{ width: `${(doc.ocrConfidence || 0.9) * 100}%` }}></div>
+                         </div>
+                         <span className="text-[10px] font-black text-green-400">{Math.round((doc.ocrConfidence || 0.9) * 100)}%</span>
+                    </div>
+                </div>
+                {doc.ocrText && (
+                    <div className="pt-2 border-t border-slate-800">
+                        <div className="text-[9px] text-slate-400 uppercase font-bold">Extracted Raw Text</div>
+                        <div className="text-[10px] text-slate-300 font-mono mt-1 max-h-20 overflow-y-auto bg-black/30 p-2 rounded leading-relaxed thin-scrollbar">
+                            {doc.ocrText}
+                        </div>
+                    </div>
+                )}
+            </div>
+        )}
+
         {field === "idDocument" && selectedProvider && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 space-y-2">
                 <div className="text-[10px] font-black text-blue-600 uppercase">Registration ID Details</div>
