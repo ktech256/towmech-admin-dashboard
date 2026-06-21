@@ -1011,8 +1011,8 @@ export default function ProvidersPage() {
                                 </div>
                             </div>
                             <div className="flex justify-between items-center pt-2 border-t border-purple-100">
-                                <div className="text-[9px] text-slate-400 uppercase font-bold">Verification Status</div>
-                                <Badge className="bg-green-600 text-white text-[10px]">
+                                <div className="text-[9px] text-slate-400 uppercase font-bold">Code Verification Status</div>
+                                <Badge className="bg-blue-600 text-white text-[10px]">
                                     {selectedProvider.providerProfile.verificationDocs.companyVerification.status}
                                 </Badge>
                             </div>
