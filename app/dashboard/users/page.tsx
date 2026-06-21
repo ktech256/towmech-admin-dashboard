@@ -26,6 +26,7 @@ import {
 
 import { fetchUsers } from "@/lib/api/users";
 import { useCountryStore } from "@/lib/store/countryStore";
+import { UserIntelligencePanel } from "@/components/dashboard/user-intelligence-panel";
 
 type User = {
   _id: string;
@@ -91,29 +92,6 @@ function matchesRoleFilter(u: User, roleFilter: RoleFilter) {
 function safeDateMs(d?: string) {
   const t = d ? new Date(d).getTime() : NaN;
   return Number.isFinite(t) ? t : 0;
-}
-
-function prettyBool(v: any) {
-  return v ? "Yes" : "No";
-}
-
-function val(v: any) {
-  if (v === null || v === undefined || v === "") return "—";
-  return String(v);
-}
-
-function pickUserFromDetailsPayload(payload: any): any {
-  if (!payload) return null;
-  // common shapes: {user:{...}}, {...}
-  if (payload.user && typeof payload.user === "object") return payload.user;
-  return payload;
-}
-
-function fmtDate(d?: any) {
-  if (!d) return "—";
-  const t = new Date(d).getTime();
-  if (!Number.isFinite(t)) return "—";
-  return new Date(d).toLocaleString();
 }
 
 export default function UsersPage() {
@@ -292,11 +270,6 @@ export default function UsersPage() {
 
   const filterPillClass =
     "h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2";
-
-  const detailsUser = useMemo(() => {
-    const fromPayload = pickUserFromDetailsPayload(detailsPayload);
-    return (fromPayload || selectedUser) as any;
-  }, [detailsPayload, selectedUser]);
 
   return (
     <div className="space-y-6">
@@ -482,7 +455,6 @@ export default function UsersPage() {
         </CardContent>
       </Card>
 
-      {/* ✅ DETAILS MODAL (user friendly, scrollable, not washed out) */}
       <Dialog
         open={detailsOpen}
         onOpenChange={(open) => {
@@ -494,138 +466,9 @@ export default function UsersPage() {
           }
         }}
       >
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden bg-white">
-          <DialogHeader>
-            <DialogTitle>User Details</DialogTitle>
-          </DialogHeader>
-
-          <div className="max-h-[72vh] overflow-y-auto pr-1">
-            {detailsLoading ? (
-              <div className="py-6 text-sm text-muted-foreground">Loading user details...</div>
-            ) : !detailsUser ? (
-              <div className="py-6 text-sm text-muted-foreground">No details available.</div>
-            ) : (
-              <div className="space-y-4">
-                <div className="rounded-md border p-4">
-                  <div className="text-base font-semibold">{val(detailsUser.name)}</div>
-                  <div className="mt-1 text-sm text-muted-foreground">
-                    {val(detailsUser.role)} • Joined {fmtDate(detailsUser.createdAt)}
-                  </div>
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-2">
-                  <InfoRow label="Email" value={detailsUser.email} />
-                  <InfoRow label="Phone" value={detailsUser.phone} />
-                  <InfoRow label="Country" value={detailsUser.countryCode} />
-                  <InfoRow label="Last Login" value={fmtDate(detailsUser.lastLoginAt)} />
-                </div>
-
-                <div className="rounded-md border p-4">
-                  <div className="font-semibold mb-2">Account Status</div>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <InfoRow label="Verified" value={prettyBool(detailsUser.isVerified)} />
-                    <InfoRow label="Device Blocked" value={prettyBool(detailsUser.isDeviceBlocked)} />
-                    <InfoRow
-                      label="Suspended"
-                      value={prettyBool(detailsUser.accountStatus?.isSuspended)}
-                    />
-                    <InfoRow label="Banned" value={prettyBool(detailsUser.accountStatus?.isBanned)} />
-                  </div>
-
-                  {detailsUser.accountStatus?.suspendedReason ? (
-                    <div className="mt-3 text-sm">
-                      <span className="font-medium">Suspended reason:</span>{" "}
-                      {val(detailsUser.accountStatus.suspendedReason)}
-                    </div>
-                  ) : null}
-
-                  {detailsUser.accountStatus?.bannedReason ? (
-                    <div className="mt-2 text-sm">
-                      <span className="font-medium">Banned reason:</span> {val(detailsUser.accountStatus.bannedReason)}
-                    </div>
-                  ) : null}
-                </div>
-
-                <div className="rounded-md border p-4">
-                  <div className="font-semibold mb-2">OTP & Blocking Details</div>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <InfoRow label="OTP Attempts" value={val(detailsUser.otpAttempts)} />
-                    <InfoRow label="Last OTP Request" value={fmtDate(detailsUser.lastOtpRequestAt)} />
-                    <InfoRow label="Block Reason" value={val(detailsUser.blockReason)} />
-                    <InfoRow label="Block Expires" value={fmtDate(detailsUser.blockExpiresAt)} />
-                  </div>
-                </div>
-
-                <div className="rounded-md border p-4">
-                  <div className="font-semibold mb-2">Quick Actions</div>
-                  <div className="flex flex-wrap gap-2">
-                    {(() => {
-                      const st = detailsUser.accountStatus || {};
-                      const busy = actionLoadingId === detailsUser._id;
-
-                      return (
-                        <>
-                          {!st.isSuspended ? (
-                            <Button size="sm" disabled={busy} onClick={() => suspendUser(detailsUser._id)}>
-                              {busy ? "..." : "Suspend"}
-                            </Button>
-                          ) : (
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              disabled={busy}
-                              onClick={() => unsuspendUser(detailsUser._id)}
-                            >
-                              {busy ? "..." : "Unsuspend"}
-                            </Button>
-                          )}
-
-                          {!st.isBanned ? (
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              disabled={busy}
-                              onClick={() => banUser(detailsUser._id)}
-                            >
-                              {busy ? "..." : "Ban"}
-                            </Button>
-                          ) : (
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              disabled={busy}
-                              onClick={() => unbanUser(detailsUser._id)}
-                            >
-                              {busy ? "..." : "Unban"}
-                            </Button>
-                          )}
-
-                          {detailsUser.isDeviceBlocked && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="border-red-600 text-red-600 hover:bg-red-50"
-                              disabled={busy}
-                              onClick={() => {
-                                if (confirm("Remove device block and allow OTP requests again?")) {
-                                  unblockDevice(detailsUser._id);
-                                }
-                              }}
-                            >
-                              {busy ? "..." : "UNBLOCK DEVICE"}
-                            </Button>
-                          )}
-                        </>
-                      );
-                    })()}
-                  </div>
-                </div>
-
-                <div className="text-xs text-muted-foreground">
-                  Tip: Use <b>Raw</b> only when troubleshooting with developers.
-                </div>
-              </div>
-            )}
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden bg-white p-0">
+          <div className="p-6 overflow-y-auto max-h-[90vh] no-scrollbar">
+            <UserIntelligencePanel data={detailsPayload} loading={detailsLoading} />
           </div>
         </DialogContent>
       </Dialog>
@@ -682,11 +525,3 @@ export default function UsersPage() {
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: any }) {
-  return (
-    <div className="rounded-md border p-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="text-sm font-medium">{value === undefined || value === null || value === "" ? "—" : String(value)}</div>
-    </div>
-  );
-}
