@@ -1068,9 +1068,9 @@ export default function ProvidersPage() {
                   )}
                 </div>
 
-                {/* ✅ Phase 6: Final Approve Button */}
+                {/* ✅ Phase 6: Final Approve Button (Targeted Fix for Company Drivers) */}
                 {selectedProvider &&
-                 selectedProvider.providerProfile?.verificationStatus !== "APPROVED" && (
+                 (tab === "pending" || tab === "rejected" || selectedProvider.providerProfile?.verificationStatus !== "APPROVED") && (
                   <div className="flex flex-col items-end gap-2 border-t pt-4">
                     {selectedProvider.identificationType === "PASSPORT" && !selectedProvider.passportCountry && (
                         <div className="text-[10px] text-red-600 font-black animate-pulse">
