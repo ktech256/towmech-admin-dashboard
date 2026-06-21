@@ -46,6 +46,16 @@ export const fetchPartnerDetails = async (id: string, type: string) => {
   return res.data;
 };
 
+export const fetchPartnerStatements = async (id: string, params: { type: string; from: string; to: string }) => {
+  const res = await api.get(`/api/admin/portal-control/partners/${id}/statements`, { params });
+  return res.data;
+};
+
+export const revokePartnerCode = async (partnerId: string, codeId: string, type: string) => {
+  const res = await api.patch(`/api/admin/portal-control/partners/${partnerId}/codes/${codeId}`, { type, action: "revoke" });
+  return res.data;
+};
+
 export const generatePartnerCodes = async (id: string, payload: { type: string; count: number; expiresInDays: number }) => {
   const res = await api.post(`/api/admin/portal-control/partners/${id}/codes`, payload);
   return res.data;
