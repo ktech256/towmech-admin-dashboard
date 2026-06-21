@@ -984,70 +984,75 @@ export default function ProvidersPage() {
           }
         }}
       >
-        <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden bg-white">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              Verification Documents - {selectedProvider?.name || "Provider"}
-              {selectedProvider?.identificationType === "SA_ID" && (
-                  <Badge className="bg-green-600 text-white border-none text-[10px]">🟢 SA ID HOLDER</Badge>
+        <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-0 overflow-hidden bg-white">
+          <div className="p-6 border-b bg-white">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                Verification Documents - {selectedProvider?.name || "Provider"}
+                {selectedProvider?.identificationType === "SA_ID" && (
+                    <Badge className="bg-green-600 text-white border-none text-[10px]">🟢 SA ID HOLDER</Badge>
+                )}
+                {selectedProvider?.identificationType === "PASSPORT" && (
+                    <Badge className={`${(selectedProvider.verifiedCountry === "South Africa" || selectedProvider.passportCountry === "South Africa") ? "bg-green-600" : "bg-blue-600"} text-white border-none text-[10px]`}>
+                        {(selectedProvider.verifiedCountry === "South Africa" || selectedProvider.passportCountry === "South Africa") ? "🟢 SOUTH AFRICAN PASSPORT HOLDER" : `🔵 PASSPORT HOLDER – ${selectedProvider.verifiedCountry || selectedProvider.passportCountry || "Unknown"}`}
+                    </Badge>
+                )}
+              </DialogTitle>
+              {selectedProvider?.providerProfile?.verificationDocs?.companyVerification?.verificationSource === "COMPANY" && (
+                  <div className="flex flex-col gap-2 pt-2">
+                      <div className="flex gap-2">
+                          <Badge className="bg-purple-600 text-white border-none text-[10px]">🏢 COMPANY VERIFIED</Badge>
+                          <Badge variant="outline" className="border-purple-200 text-purple-700 bg-purple-50 text-[10px]">
+                              SOURCE: {selectedProvider.providerProfile.verificationDocs.companyVerification.verificationSource}
+                          </Badge>
+                      </div>
+                      {selectedProvider.providerProfile.verificationDocs.companyVerification.partnerId && (
+                          <div className="bg-purple-50 border border-purple-100 rounded-lg p-3 space-y-2">
+                              <div className="text-[10px] font-black text-purple-600 uppercase">Partner Details</div>
+                              <div className="grid grid-cols-2 gap-4">
+                                  <div>
+                                      <div className="text-[9px] text-slate-400 uppercase font-bold">Company Name</div>
+                                      <div className="text-sm font-bold text-slate-800">
+                                          {selectedProvider.providerProfile.verificationDocs.companyVerification.partnerName || "—"}
+                                      </div>
+                                  </div>
+                                  <div>
+                                      <div className="text-[9px] text-slate-400 uppercase font-bold">Partner Code</div>
+                                      <div className="text-sm font-black text-slate-800 tracking-wider">
+                                          {selectedProvider.providerProfile.verificationDocs.companyVerification.partnerCode || "—"}
+                                      </div>
+                                  </div>
+                              </div>
+                              <div className="flex justify-between items-center pt-2 border-t border-purple-100">
+                                  <div className="text-[9px] text-slate-400 uppercase font-bold">Code Verification Status</div>
+                                  <Badge className="bg-blue-600 text-white text-[10px]">
+                                      {selectedProvider.providerProfile.verificationDocs.companyVerification.status}
+                                  </Badge>
+                              </div>
+                          </div>
+                      )}
+                  </div>
               )}
-              {selectedProvider?.identificationType === "PASSPORT" && (
-                  <Badge className={`${(selectedProvider.verifiedCountry === "South Africa" || selectedProvider.passportCountry === "South Africa") ? "bg-green-600" : "bg-blue-600"} text-white border-none text-[10px]`}>
-                      {(selectedProvider.verifiedCountry === "South Africa" || selectedProvider.passportCountry === "South Africa") ? "🟢 SOUTH AFRICAN PASSPORT HOLDER" : `🔵 PASSPORT HOLDER – ${selectedProvider.verifiedCountry || selectedProvider.passportCountry || "Unknown"}`}
-                  </Badge>
-              )}
-            </DialogTitle>
-            {selectedProvider?.providerProfile?.verificationDocs?.companyVerification?.verificationSource === "COMPANY" && (
-                <div className="flex flex-col gap-2 px-6 pb-2">
-                    <div className="flex gap-2">
-                        <Badge className="bg-purple-600 text-white border-none text-[10px]">🏢 COMPANY VERIFIED</Badge>
-                        <Badge variant="outline" className="border-purple-200 text-purple-700 bg-purple-50 text-[10px]">
-                            SOURCE: {selectedProvider.providerProfile.verificationDocs.companyVerification.verificationSource}
-                        </Badge>
-                    </div>
-                    {selectedProvider.providerProfile.verificationDocs.companyVerification.partnerId && (
-                        <div className="bg-purple-50 border border-purple-100 rounded-lg p-3 space-y-2">
-                            <div className="text-[10px] font-black text-purple-600 uppercase">Partner Details</div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <div className="text-[9px] text-slate-400 uppercase font-bold">Company Name</div>
-                                    <div className="text-sm font-bold text-slate-800">
-                                        {selectedProvider.providerProfile.verificationDocs.companyVerification.partnerName || "—"}
-                                    </div>
-                                </div>
-                                <div>
-                                    <div className="text-[9px] text-slate-400 uppercase font-bold">Partner Code</div>
-                                    <div className="text-sm font-black text-slate-800 tracking-wider">
-                                        {selectedProvider.providerProfile.verificationDocs.companyVerification.partnerCode || "—"}
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="flex justify-between items-center pt-2 border-t border-purple-100">
-                                <div className="text-[9px] text-slate-400 uppercase font-bold">Code Verification Status</div>
-                                <Badge className="bg-blue-600 text-white text-[10px]">
-                                    {selectedProvider.providerProfile.verificationDocs.companyVerification.status}
-                                </Badge>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            )}
-          </DialogHeader>
+            </DialogHeader>
+          </div>
 
-          <div className="max-h-[72vh] overflow-y-auto pr-1">
+          <div className="flex-1 overflow-y-auto p-6 bg-slate-50/30">
             {docsLoading && (
-              <div className="py-10 text-center text-sm text-muted-foreground">
+              <div className="py-20 text-center text-sm text-muted-foreground">
+                <div className="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
                 Loading documents...
               </div>
             )}
 
             {docsError && (
-              <div className="py-10 text-center text-sm text-red-600">{docsError}</div>
+              <div className="py-10 text-center text-sm text-red-600 font-bold bg-red-50 rounded-lg border border-red-100 mx-4">
+                {docsError}
+              </div>
             )}
 
             {!docsLoading && !docsError && (
-              <div className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-6">
+                <div className="grid gap-6 md:grid-cols-2">
                   {renderDoc("ID Document", docs?.idDocument, "idDocument")}
                   {renderDoc("Driver Licence", docs?.driverLicense, "driverLicense")}
                   {renderDoc("Selfie / Profile", docs?.selfie, "selfie")}
@@ -1068,32 +1073,64 @@ export default function ProvidersPage() {
                   )}
                 </div>
 
-                {/* ✅ Phase 6: Final Approve Button (Targeted Fix for Company Drivers) */}
-                {selectedProvider &&
-                 (tab === "pending" || tab === "rejected" || selectedProvider.providerProfile?.verificationStatus !== "APPROVED") && (
-                  <div className="flex flex-col items-end gap-2 border-t pt-4">
-                    {selectedProvider.identificationType === "PASSPORT" && !selectedProvider.passportCountry && (
-                        <div className="text-[10px] text-red-600 font-black animate-pulse">
-                            ⚠️ BLOCKER: CANNOT APPROVE WITHOUT PASSPORT COUNTRY
-                        </div>
-                    )}
-                    <Button
-                      className="bg-green-600 hover:bg-green-700 text-white font-bold"
-                      onClick={handleFinalApprove}
-                      disabled={selectedProvider.identificationType === "PASSPORT" && !selectedProvider.passportCountry}
-                    >
-                      FINAL APPROVE PROVIDER ✅
-                    </Button>
-                  </div>
-                )}
-
                 {/* ✅ Show reject reason (if any) */}
                 {selectedProvider && getRejectReason(selectedProvider) ? (
-                  <div className="rounded-md border p-3 bg-white">
-                    <div className="text-xs text-muted-foreground">Reject reason</div>
-                    <div className="text-sm font-medium text-slate-900">
+                  <div className="rounded-md border p-4 bg-white shadow-sm">
+                    <div className="text-xs text-muted-foreground uppercase font-bold tracking-wider mb-1">Reject reason</div>
+                    <div className="text-sm font-medium text-red-700">
                       {getRejectReason(selectedProvider)}
                     </div>
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </div>
+
+          {/* ✅ STICKY FOOTER: Guaranteed Visibility for Admin Actions */}
+          {!docsLoading && !docsError && (
+              <div className="p-6 border-t bg-white flex justify-between items-center shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+                  <div>
+                      {selectedProvider && (
+                          <div className="flex items-center gap-2">
+                              <span className="text-xs text-slate-400 font-bold uppercase">Status:</span>
+                              <Badge className={
+                                  selectedProvider.providerProfile?.verificationStatus === "APPROVED" ? "bg-green-600" :
+                                  selectedProvider.providerProfile?.verificationStatus === "REJECTED" ? "bg-red-600" :
+                                  "bg-yellow-600"
+                              }>
+                                  {selectedProvider.providerProfile?.verificationStatus || "PENDING"}
+                              </Badge>
+                          </div>
+                      )}
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    {/* ✅ Phase 6: Final Approve Button */}
+                    {selectedProvider && (tab === "pending" || tab === "rejected" || selectedProvider.providerProfile?.verificationStatus !== "APPROVED") && (
+                      <div className="flex flex-col items-end gap-2">
+                        {selectedProvider.identificationType === "PASSPORT" && !selectedProvider.passportCountry && (
+                            <div className="text-[10px] text-red-600 font-black animate-pulse">
+                                ⚠️ BLOCKER: CANNOT APPROVE WITHOUT PASSPORT COUNTRY
+                            </div>
+                        )}
+                        <Button
+                          className="bg-green-600 hover:bg-green-700 text-white font-bold h-11 px-8 shadow-lg shadow-green-600/20"
+                          onClick={handleFinalApprove}
+                          disabled={selectedProvider.identificationType === "PASSPORT" && !selectedProvider.passportCountry}
+                        >
+                          FINAL APPROVE PROVIDER ✅
+                        </Button>
+                      </div>
+                    )}
+
+                    <Button variant="outline" onClick={() => setOpenDocsModal(false)}>
+                        Close
+                    </Button>
+                  </div>
+              </div>
+          )}
+        </DialogContent>
+      </Dialog>
                   </div>
                 ) : null}
               </div>
