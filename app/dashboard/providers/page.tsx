@@ -1131,13 +1131,6 @@ export default function ProvidersPage() {
           )}
         </DialogContent>
       </Dialog>
-                  </div>
-                ) : null}
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* ✅ Reject Modal (captures reason) */}
       <Dialog
