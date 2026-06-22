@@ -131,9 +131,11 @@ type VerificationDocs = {
   // ✅ Phase 2: Face Matching
   faceMatching?: {
     score: number;
+    similarityScore?: number;
     status: "NOT_CHECKED" | "MATCHED" | "REVIEW_REQUIRED" | "NO_MATCH";
     verifiedAt: string;
     provider: string;
+    model?: string;
     details?: any;
   };
 };
@@ -1093,7 +1095,7 @@ export default function ProvidersPage() {
                   )}
                 </div>
 
-                {/* ✅ Phase 2: Face Matching Intelligence */}
+                {/* ✅ Phase 2B: Biometric Identity Intelligence */}
                 {docs?.faceMatching && docs.faceMatching.status !== "NOT_CHECKED" && (
                   <div className="bg-slate-900 text-white rounded-lg p-5 shadow-xl border border-purple-500/30 relative overflow-hidden">
                       <div className="absolute top-0 right-0 p-2">
@@ -1103,40 +1105,41 @@ export default function ProvidersPage() {
                             className="h-7 text-[10px] text-purple-400 hover:text-purple-300 hover:bg-purple-500/10"
                             onClick={handleFaceMatch}
                           >
-                              <RefreshCw size={10} className="mr-1" /> RE-CHECK
+                              <RefreshCw size={10} className="mr-1" /> RE-VERIFY BIOMETRICS
                           </Button>
                       </div>
 
                       <div className="flex items-center justify-between mb-4">
                           <div className="text-xs font-black text-purple-400 uppercase tracking-widest flex items-center gap-2">
-                             <Shield size={14}/> Face Matching Intelligence (ID ↔ Selfie)
+                             <Shield size={14}/> Biometric Identity Verification (Vertex AI)
                           </div>
                           <Badge className={
                               docs.faceMatching.status === "MATCHED" ? "bg-green-600 text-white" :
                               docs.faceMatching.status === "REVIEW_REQUIRED" ? "bg-yellow-600 text-white" :
                               "bg-red-600 text-white"
                           }>
-                              {docs.faceMatching.status.replace("_", " ")}
+                              {docs.faceMatching.status === "MATCHED" ? "IDENTITY VERIFIED" :
+                               docs.faceMatching.status === "REVIEW_REQUIRED" ? "MANUAL REVIEW" : "IDENTITY MISMATCH"}
                           </Badge>
                       </div>
 
                       <div className="grid grid-cols-3 gap-6 items-center">
                           <div className="col-span-2 space-y-4">
                               <div>
-                                  <div className="text-[10px] text-slate-400 uppercase font-bold mb-1">Match Confidence Score</div>
+                                  <div className="text-[10px] text-slate-400 uppercase font-bold mb-1">Biometric Similarity Score</div>
                                   <div className="flex items-center gap-4">
                                        <div className="flex-1 h-3 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
                                            <div className={`h-full transition-all duration-1000 ${
-                                               docs.faceMatching.score >= 90 ? "bg-green-500" :
-                                               docs.faceMatching.score >= 70 ? "bg-yellow-500" :
+                                               (docs.faceMatching.similarityScore || docs.faceMatching.score) >= 95 ? "bg-green-500" :
+                                               (docs.faceMatching.similarityScore || docs.faceMatching.score) >= 80 ? "bg-yellow-500" :
                                                "bg-red-500"
-                                           }`} style={{ width: `${docs.faceMatching.score}%` }}></div>
+                                           }`} style={{ width: `${docs.faceMatching.similarityScore || docs.faceMatching.score}%` }}></div>
                                        </div>
                                        <span className={`text-2xl font-black ${
-                                               docs.faceMatching.score >= 90 ? "text-green-400" :
-                                               docs.faceMatching.score >= 70 ? "text-yellow-400" :
+                                               (docs.faceMatching.similarityScore || docs.faceMatching.score) >= 95 ? "text-green-400" :
+                                               (docs.faceMatching.similarityScore || docs.faceMatching.score) >= 80 ? "text-yellow-400" :
                                                "text-red-400"
-                                           }`}>{docs.faceMatching.score}%</span>
+                                           }`}>{docs.faceMatching.similarityScore || docs.faceMatching.score}%</span>
                                   </div>
                               </div>
 
@@ -1145,10 +1148,10 @@ export default function ProvidersPage() {
                                       <span className="text-slate-500 font-bold uppercase">Provider:</span>
                                       <span className="ml-1 text-slate-300">{docs.faceMatching.provider}</span>
                                   </div>
-                                  {docs.faceMatching.details?.detectionConfidence && (
+                                  {docs.faceMatching.model && (
                                       <div>
-                                          <span className="text-slate-500 font-bold uppercase">Confidence:</span>
-                                          <span className="ml-1 text-slate-300">{Math.round(docs.faceMatching.details.detectionConfidence * 100)}%</span>
+                                          <span className="text-slate-500 font-bold uppercase">Model:</span>
+                                          <span className="ml-1 text-slate-300">{docs.faceMatching.model}</span>
                                       </div>
                                   )}
                                   <div>
@@ -1164,21 +1167,21 @@ export default function ProvidersPage() {
                                       <div className="bg-green-500/10 p-3 rounded-full mb-2">
                                           <CheckCircle className="text-green-500" size={32} />
                                       </div>
-                                      <div className="text-[10px] font-black text-green-500 uppercase">Identity Verified</div>
+                                      <div className="text-[10px] font-black text-green-500 uppercase">Trusted Identity</div>
                                   </div>
                               ) : docs.faceMatching.status === "REVIEW_REQUIRED" ? (
                                   <div className="text-center">
                                       <div className="bg-yellow-500/10 p-3 rounded-full mb-2">
                                           < Shield size={32} className="text-yellow-500" />
                                       </div>
-                                      <div className="text-[10px] font-black text-yellow-500 uppercase">Manual Review</div>
+                                      <div className="text-[10px] font-black text-yellow-500 uppercase">Ambiguous Match</div>
                                   </div>
                               ) : (
                                   <div className="text-center">
                                       <div className="bg-red-500/10 p-3 rounded-full mb-2">
                                           <XCircle className="text-red-500" size={32} />
                                       </div>
-                                      <div className="text-[10px] font-black text-red-500 uppercase">Mismatch Risk</div>
+                                      <div className="text-[10px] font-black text-red-500 uppercase">Fraud High Risk</div>
                                   </div>
                               )}
                           </div>
