@@ -56,6 +56,14 @@ type Provider = {
   providerProfile?: {
     verificationStatus?: string;
     jobPreference?: string;
+    lastFaceCheck?: {
+        status: "NOT_CHECKED" | "MATCHED" | "REVIEW_REQUIRED" | "NO_MATCH";
+        score: number;
+        verifiedAt: string | null;
+        deviceId: string | null;
+        isRequired: boolean;
+        failedAttempts: number;
+    };
     rejectReason?: string | null; // optional if backend provides it
     rejectedReason?: string | null; // common alternate field
     rejectionReason?: string | null; // common alternate field
@@ -436,6 +444,16 @@ export default function ProvidersPage() {
     } catch (err: any) {
       alert(err?.response?.data?.message || "Override failed");
     }
+  };
+
+  const handleForceFaceCheck = async (id: string) => {
+      try {
+          await api.patch(`/api/admin/providers/providers/${id}/force-face-check`);
+          alert("Face verification forced successfully ✅");
+          loadProviders(tab);
+      } catch (err: any) {
+          alert(err?.response?.data?.message || "Failed to force verification");
+      }
   };
 
   const handleFaceMatch = async () => {
@@ -1170,6 +1188,72 @@ export default function ProvidersPage() {
                     </>
                   )}
                 </div>
+
+                {/* ✅ Phase 3: Face Check-In Monitoring */}
+                {selectedProvider?.providerProfile?.lastFaceCheck && (
+                    <div className="bg-slate-900 text-white rounded-lg p-5 shadow-xl border border-blue-500/30">
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="text-xs font-black text-blue-400 uppercase tracking-widest flex items-center gap-2">
+                                <Shield size={14}/> Face Verification Monitoring (Daily Check-In)
+                            </div>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-[10px] bg-red-600/10 text-red-500 border-red-500/30 hover:bg-red-600 hover:text-white"
+                                onClick={() => handleForceFaceCheck(selectedProvider._id)}
+                            >
+                                <RefreshCw size={10} className="mr-1" /> FORCE VERIFICATION
+                            </Button>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-6">
+                            <div className="space-y-4">
+                                <div>
+                                    <div className="text-[9px] text-slate-400 uppercase font-bold mb-1">Current Status</div>
+                                    <Badge className={
+                                        selectedProvider.providerProfile.lastFaceCheck.status === "MATCHED" ? "bg-green-600 text-white" :
+                                        selectedProvider.providerProfile.lastFaceCheck.status === "REVIEW_REQUIRED" ? "bg-yellow-600 text-white" :
+                                        selectedProvider.providerProfile.lastFaceCheck.status === "NO_MATCH" ? "bg-red-600 text-white" :
+                                        "bg-slate-600 text-white"
+                                    }>
+                                        {selectedProvider.providerProfile.lastFaceCheck.status.replace("_", " ")}
+                                    </Badge>
+                                </div>
+                                {selectedProvider.providerProfile.lastFaceCheck.isRequired && (
+                                    <div className="bg-orange-600 text-white text-[9px] font-black p-1 px-2 rounded text-center">
+                                        ⚠️ PENDING FORCE CHECK
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="space-y-3">
+                                <div>
+                                    <div className="text-[9px] text-slate-400 uppercase font-bold">Similarity Score</div>
+                                    <div className="text-sm font-black text-blue-100">{selectedProvider.providerProfile.lastFaceCheck.score}%</div>
+                                </div>
+                                <div>
+                                    <div className="text-[9px] text-slate-400 uppercase font-bold">Last Verified</div>
+                                    <div className="text-[10px] text-slate-300">
+                                        {selectedProvider.providerProfile.lastFaceCheck.verifiedAt ? new Date(selectedProvider.providerProfile.lastFaceCheck.verifiedAt).toLocaleString() : "Never"}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-3">
+                                <div>
+                                    <div className="text-[9px] text-slate-400 uppercase font-bold">Failed Attempts</div>
+                                    <div className={`text-sm font-black ${selectedProvider.providerProfile.lastFaceCheck.failedAttempts > 0 ? "text-red-400" : "text-slate-300"}`}>
+                                        {selectedProvider.providerProfile.lastFaceCheck.failedAttempts}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div className="text-[9px] text-slate-400 uppercase font-bold">Logged Device</div>
+                                    <div className="text-[10px] text-slate-300 uppercase">{selectedProvider.providerProfile.lastFaceCheck.deviceId || "—"}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* ✅ Phase 2B: Biometric Identity Intelligence */}
                 {docs?.faceMatching && docs.faceMatching.status !== "NOT_CHECKED" && (

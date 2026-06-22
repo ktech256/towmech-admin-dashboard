@@ -23,6 +23,14 @@ type UiServices = {
   chat: boolean;
   ratings: boolean;
 
+  // Phase 3: Face Check-In
+  faceCheckIn: boolean;
+  faceCheckRandom: boolean;
+  faceCheckScheduled: boolean;
+  faceCheckFrequencyHours: number;
+  faceCheckActiveJob: boolean;
+  faceCheckActiveJobProbability: number;
+
   // extra (optional — if you later decide to show them)
   winchRecovery?: boolean;
   roadsideAssistance?: boolean;
@@ -98,6 +106,12 @@ const DEFAULT_UI_SERVICES: UiServices = {
   insurance: false,
   chat: true,
   ratings: true,
+  faceCheckIn: false,
+  faceCheckRandom: false,
+  faceCheckScheduled: false,
+  faceCheckFrequencyHours: 24,
+  faceCheckActiveJob: false,
+  faceCheckActiveJobProbability: 5,
 };
 
 /**
@@ -159,6 +173,13 @@ function apiToUiServices(input: any): UiServices {
           ? (s as any).ratings
           : DEFAULT_UI_SERVICES.ratings,
 
+    faceCheckIn: typeof s.faceCheckInEnabled === "boolean" ? s.faceCheckInEnabled : DEFAULT_UI_SERVICES.faceCheckIn,
+    faceCheckRandom: typeof s.faceCheckRandomEnabled === "boolean" ? s.faceCheckRandomEnabled : DEFAULT_UI_SERVICES.faceCheckRandom,
+    faceCheckScheduled: typeof s.faceCheckScheduledEnabled === "boolean" ? s.faceCheckScheduledEnabled : DEFAULT_UI_SERVICES.faceCheckScheduled,
+    faceCheckFrequencyHours: typeof s.faceCheckFrequencyHours === "number" ? s.faceCheckFrequencyHours : DEFAULT_UI_SERVICES.faceCheckFrequencyHours,
+    faceCheckActiveJob: typeof s.faceCheckActiveJobEnabled === "boolean" ? s.faceCheckActiveJobEnabled : DEFAULT_UI_SERVICES.faceCheckActiveJob,
+    faceCheckActiveJobProbability: typeof s.faceCheckActiveJobProbability === "number" ? s.faceCheckActiveJobProbability : DEFAULT_UI_SERVICES.faceCheckActiveJobProbability,
+
     // optional extras (if backend returns them)
     winchRecovery:
       typeof s.winchRecoveryEnabled === "boolean" ? s.winchRecoveryEnabled : undefined,
@@ -190,6 +211,13 @@ function uiToApiServices(ui: UiServices): ApiServices {
     insuranceEnabled: !!ui.insurance,
     chatEnabled: !!ui.chat,
     ratingsEnabled: !!ui.ratings,
+
+    faceCheckInEnabled: !!ui.faceCheckIn,
+    faceCheckRandomEnabled: !!ui.faceCheckRandom,
+    faceCheckScheduledEnabled: !!ui.faceCheckScheduled,
+    faceCheckFrequencyHours: Number(ui.faceCheckFrequencyHours),
+    faceCheckActiveJobEnabled: !!ui.faceCheckActiveJob,
+    faceCheckActiveJobProbability: Number(ui.faceCheckActiveJobProbability),
 
     // optional extras (only if present)
     ...(typeof ui.winchRecovery === "boolean"
@@ -512,6 +540,98 @@ export default function CountryServicesPage() {
                 value={services.ratings}
                 onChange={(v) => setService("ratings", v)}
               />
+            </div>
+
+            <div style={{ marginTop: 24, marginBottom: 12 }}>
+                <h3 style={{ fontSize: 16, fontWeight: 800, color: "#4f46e5" }}>Face Check-In Verification (Phase 3)</h3>
+                <p style={{ fontSize: 12, opacity: 0.7, marginBottom: 12 }}>
+                    Centralized biometric identity verification to prevent account sharing.
+                </p>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                gap: 12,
+              }}
+            >
+                <ToggleRow
+                    title="Enabled"
+                    description="Providers must pass face verification"
+                    value={services.faceCheckIn}
+                    onChange={(v) => setService("faceCheckIn", v)}
+                />
+
+                <ToggleRow
+                    title="Scheduled Verification"
+                    description="Enforce verification at regular intervals"
+                    value={services.faceCheckScheduledEnabled || services.faceCheckScheduled}
+                    onChange={(v) => setService("faceCheckScheduled", v)}
+                />
+
+                {services.faceCheckScheduled && (
+                    <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 14 }}>
+                        <div style={{ fontWeight: 800 }}>Frequency (Hours)</div>
+                        <select
+                            value={services.faceCheckFrequencyHours}
+                            onChange={(e) => setUiServices(p => ({ ...p, faceCheckFrequencyHours: parseInt(e.target.value) }))}
+                            style={{ width: "100%", padding: 8, marginTop: 8, borderRadius: 8, border: "1px solid #d1d5db" }}
+                        >
+                            <option value={24}>24 Hours</option>
+                            <option value={36}>36 Hours</option>
+                            <option value={48}>48 Hours</option>
+                            <option value={72}>72 Hours</option>
+                            <option value={168}>7 Days</option>
+                        </select>
+                    </div>
+                )}
+
+                <ToggleRow
+                    title="Random Verification"
+                    description="Randomized time windows for check-ins"
+                    value={services.faceCheckRandom}
+                    onChange={(v) => setService("faceCheckRandom", v)}
+                />
+
+                <ToggleRow
+                    title="Active Job Verification"
+                    description="Verify identity during active jobs"
+                    value={services.faceCheckActiveJob}
+                    onChange={(v) => setService("faceCheckActiveJob", v)}
+                />
+
+                {services.faceCheckActiveJob && (
+                    <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 14 }}>
+                        <div style={{ fontWeight: 800 }}>Selection Probability (%)</div>
+                        <input
+                            type="number" min="1" max="100"
+                            value={services.faceCheckActiveJobProbability}
+                            onChange={(e) => setUiServices(p => ({ ...p, faceCheckActiveJobProbability: parseInt(e.target.value) }))}
+                            style={{ width: "100%", padding: 8, marginTop: 8, borderRadius: 8, border: "1px solid #d1d5db" }}
+                        />
+                    </div>
+                )}
+            </div>
+
+            <div style={{ marginTop: 24, padding: 16, background: "#f8fafc", borderRadius: 12, border: "1px solid #e2e8f0" }}>
+                <h4 style={{ fontSize: 14, fontWeight: 800, marginBottom: 8 }}>Bulk Actions</h4>
+                <button
+                    onClick={async () => {
+                        if (!confirm(`Force face verification for ALL providers in ${selectedCountry.name}?`)) return;
+                        try {
+                            const res = await fetch(`${API_BASE}/api/admin/providers/bulk/force-face-check`, {
+                                method: "PATCH",
+                                headers: authHeaders({ "X-COUNTRY-CODE": selectedCountryCode })
+                            });
+                            if (res.ok) alert("Bulk verification forced successfully ✅");
+                            else alert("Failed to force bulk verification");
+                        } catch (e) { alert("Error connecting to server"); }
+                    }}
+                    style={{ background: "#ef4444", color: "white", padding: "10px 16px", borderRadius: 8, border: "none", fontWeight: 700, cursor: "pointer" }}
+                >
+                    Force Verification for All Providers in {selectedCountry.code}
+                </button>
             </div>
 
             <div style={{ marginTop: 18, opacity: 0.75, fontSize: 13 }}>
