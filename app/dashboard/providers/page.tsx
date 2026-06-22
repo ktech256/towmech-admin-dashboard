@@ -34,7 +34,7 @@ import {
 } from "@/components/ui/dialog";
 
 import { useCountryStore } from "@/lib/store/countryStore";
-import { TrendingUp, BarChart, DollarSign, XCircle, CheckCircle, Shield, RefreshCw } from "lucide-react";
+import { TrendingUp, BarChart, DollarSign, XCircle, CheckCircle, Shield, RefreshCw, Edit } from "lucide-react";
 
 type Provider = {
   _id: string;
@@ -101,10 +101,24 @@ type VerificationDoc = {
 
   // ✅ Phase 1: Smart ID Metadata
   detectedCountry?: string;
+  countryConfidence?: number;
   ocrText?: string;
   documentNumber?: string;
   documentType?: string;
   ocrConfidence?: number;
+  ocrWarning?: string | null;
+  mismatchWarning?: boolean;
+  detectedAt?: string;
+
+  // ✅ Admin Intelligence Overrides
+  ocrOverride?: {
+    detectedCountry?: string;
+    documentType?: string;
+    documentNumber?: string;
+    overriddenByName?: string;
+    overriddenAt?: string;
+    reason?: string;
+  };
 
   history?: Array<{
     url: string;
@@ -414,6 +428,16 @@ export default function ProvidersPage() {
     }
   };
 
+  const handleOcrOverride = async (id: string, payload: any) => {
+    try {
+      const res = await api.patch(`/api/admin/providers/providers/${id}/documents/idDocument/ocr-override`, payload);
+      setDocs(res.data.verificationDocs);
+      alert("OCR intelligence overridden successfully ✅");
+    } catch (err: any) {
+      alert(err?.response?.data?.message || "Override failed");
+    }
+  };
+
   const handleFaceMatch = async () => {
     if (!selectedProvider) return;
     try {
@@ -514,40 +538,92 @@ export default function ProvidersPage() {
 
     return (
       <div className="space-y-2 rounded-lg border p-3 bg-white">
-        {field === "idDocument" && doc && doc.detectedCountry && (
-            <div className="bg-slate-900 text-white rounded-lg p-3 mb-4 space-y-2 shadow-xl border border-blue-500/30">
-                <div className="text-[10px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-2">
-                   <Shield size={12}/> Smart ID OCR Intelligence
+        {field === "idDocument" && doc && (doc.detectedCountry || doc.ocrWarning) && (
+            <div className={`bg-slate-900 text-white rounded-lg p-3 mb-4 space-y-2 shadow-xl border ${
+                (doc.countryConfidence || 0) >= 90 ? 'border-green-500/30' :
+                (doc.countryConfidence || 0) >= 70 ? 'border-yellow-500/30' : 'border-red-500/30'
+            }`}>
+                <div className="text-[10px] font-black text-blue-400 uppercase tracking-widest flex items-center justify-between">
+                   <div className="flex items-center gap-2"><Shield size={12}/> OCR Intelligence</div>
+                   {doc.ocrOverride && (
+                       <Badge className="bg-orange-600 text-white text-[8px] py-0 h-4 border-none">OVERRIDDEN</Badge>
+                   )}
                 </div>
+
+                {doc.mismatchWarning && (
+                    <div className="bg-red-600 text-white text-[9px] font-black p-1 px-2 rounded animate-pulse">
+                        ⚠️ COUNTRY MISMATCH: OCR DETECTED {doc.detectedCountry?.toUpperCase()}
+                    </div>
+                )}
+
+                {doc.ocrWarning && (
+                    <div className="bg-orange-600 text-white text-[9px] font-black p-1 px-2 rounded">
+                        ⚠️ OCR WARNING: {doc.ocrWarning.toUpperCase()}
+                    </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-4 pt-2">
                     <div>
                         <div className="text-[9px] text-slate-400 uppercase font-bold">Detected Country</div>
-                        <div className="text-sm font-black text-blue-100 uppercase">
-                            {doc.detectedCountry}
+                        <div className="text-sm font-black text-blue-100 uppercase flex items-center gap-2">
+                            {doc.detectedCountry || "Unknown"}
+                            <Button
+                                variant="ghost" className="h-4 w-4 p-0 text-blue-400 hover:text-white"
+                                onClick={() => {
+                                    const val = prompt("Override Detected Country:", doc.detectedCountry || "");
+                                    if (val !== null) handleOcrOverride(selectedProvider?._id!, { detectedCountry: val });
+                                }}
+                            ><Edit size={10}/></Button>
                         </div>
                     </div>
                     <div>
-                        <div className="text-[9px] text-slate-400 uppercase font-bold">Document Number</div>
-                        <div className="text-sm font-black text-blue-100 tracking-wider">
-                            {doc.documentNumber || "—"}
+                        <div className="text-[9px] text-slate-400 uppercase font-bold">Document Type</div>
+                        <div className="text-sm font-black text-blue-100 flex items-center gap-2">
+                            {doc.documentType || "—"}
+                            <Button
+                                variant="ghost" className="h-4 w-4 p-0 text-blue-400 hover:text-white"
+                                onClick={() => {
+                                    const val = prompt("Override Document Type (ID/PASSPORT):", doc.documentType || "");
+                                    if (val !== null) handleOcrOverride(selectedProvider?._id!, { documentType: val });
+                                }}
+                            ><Edit size={10}/></Button>
                         </div>
                     </div>
                 </div>
+
                 <div className="pt-2 border-t border-slate-800">
-                    <div className="text-[9px] text-slate-400 uppercase font-bold mb-1">OCR Confidence Score</div>
-                    <div className="flex items-center gap-3">
-                         <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                             <div className="h-full bg-green-500" style={{ width: `${(doc.ocrConfidence || 0.9) * 100}%` }}></div>
-                         </div>
-                         <span className="text-[10px] font-black text-green-400">{Math.round((doc.ocrConfidence || 0.9) * 100)}%</span>
+                    <div className="text-[9px] text-slate-400 uppercase font-bold">Document Number</div>
+                    <div className="text-sm font-black text-blue-100 tracking-wider flex items-center gap-2">
+                        {doc.documentNumber || "—"}
+                        <Button
+                                variant="ghost" className="h-4 w-4 p-0 text-blue-400 hover:text-white"
+                                onClick={() => {
+                                    const val = prompt("Override Document Number:", doc.documentNumber || "");
+                                    if (val !== null) handleOcrOverride(selectedProvider?._id!, { documentNumber: val });
+                                }}
+                            ><Edit size={10}/></Button>
                     </div>
                 </div>
-                {doc.ocrText && (
-                    <div className="pt-2 border-t border-slate-800">
-                        <div className="text-[9px] text-slate-400 uppercase font-bold">Extracted Raw Text</div>
-                        <div className="text-[10px] text-slate-300 font-mono mt-1 max-h-20 overflow-y-auto bg-black/30 p-2 rounded leading-relaxed thin-scrollbar">
-                            {doc.ocrText}
+
+                <div className="pt-2 border-t border-slate-800">
+                    <div className="text-[9px] text-slate-400 uppercase font-bold mb-1 flex justify-between">
+                        <span>Confidence Scores</span>
+                        <div className="flex gap-4">
+                            <span className="text-[8px]">OCR: {Math.round((doc.ocrConfidence || 0) * 100)}%</span>
+                            <span className="text-[8px]">COUNTRY: {doc.countryConfidence || 0}%</span>
                         </div>
+                    </div>
+                    <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden flex">
+                         <div className={`h-full ${
+                             (doc.countryConfidence || 0) >= 90 ? 'bg-green-500' :
+                             (doc.countryConfidence || 0) >= 70 ? 'bg-yellow-500' : 'bg-red-500'
+                         }`} style={{ width: `${doc.countryConfidence || 0}%` }}></div>
+                    </div>
+                </div>
+
+                {doc.ocrOverride && (
+                    <div className="text-[8px] text-slate-500 italic pt-1">
+                        Manual override by {doc.ocrOverride.overriddenByName} on {new Date(doc.ocrOverride.overriddenAt!).toLocaleDateString()}
                     </div>
                 )}
             </div>
