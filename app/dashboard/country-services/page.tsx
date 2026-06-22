@@ -566,7 +566,7 @@ export default function CountryServicesPage() {
                 <ToggleRow
                     title="Scheduled Verification"
                     description="Enforce verification at regular intervals"
-                    value={services.faceCheckScheduledEnabled || services.faceCheckScheduled}
+                    value={services.faceCheckScheduled}
                     onChange={(v) => setService("faceCheckScheduled", v)}
                 />
 
