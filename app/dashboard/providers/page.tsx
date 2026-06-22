@@ -34,7 +34,7 @@ import {
 } from "@/components/ui/dialog";
 
 import { useCountryStore } from "@/lib/store/countryStore";
-import { TrendingUp, BarChart, DollarSign, XCircle, CheckCircle, Shield } from "lucide-react";
+import { TrendingUp, BarChart, DollarSign, XCircle, CheckCircle, Shield, RefreshCw } from "lucide-react";
 
 type Provider = {
   _id: string;
@@ -127,6 +127,15 @@ type VerificationDocs = {
   proofOfResidence?: VerificationDoc;
   proofOfVehicle?: VerificationDoc;
   vehicleLicenseDisc?: VerificationDoc;
+
+  // ✅ Phase 2: Face Matching
+  faceMatching?: {
+    score: number;
+    status: "NOT_CHECKED" | "MATCHED" | "REVIEW_REQUIRED" | "NO_MATCH";
+    verifiedAt: string;
+    provider: string;
+    details?: any;
+  };
 };
 
 type TabKey = "pending" | "approved" | "rejected";
@@ -400,6 +409,17 @@ export default function ProvidersPage() {
       loadProviders(tab);
     } catch (err: any) {
       alert(err?.response?.data?.message || "Final approve failed");
+    }
+  };
+
+  const handleFaceMatch = async () => {
+    if (!selectedProvider) return;
+    try {
+      const res = await api.patch(`/api/admin/providers/providers/${selectedProvider._id}/face-match`);
+      setDocs(res.data.verificationDocs);
+      alert("Face matching intelligence updated ✅");
+    } catch (err: any) {
+      alert(err?.response?.data?.message || "Face matching failed");
     }
   };
 
@@ -1072,6 +1092,93 @@ export default function ProvidersPage() {
                     </>
                   )}
                 </div>
+
+                {/* ✅ Phase 2: Face Matching Intelligence */}
+                {docs?.faceMatching && docs.faceMatching.status !== "NOT_CHECKED" && (
+                  <div className="bg-slate-900 text-white rounded-lg p-5 shadow-xl border border-purple-500/30 relative overflow-hidden">
+                      <div className="absolute top-0 right-0 p-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-[10px] text-purple-400 hover:text-purple-300 hover:bg-purple-500/10"
+                            onClick={handleFaceMatch}
+                          >
+                              <RefreshCw size={10} className="mr-1" /> RE-CHECK
+                          </Button>
+                      </div>
+
+                      <div className="flex items-center justify-between mb-4">
+                          <div className="text-xs font-black text-purple-400 uppercase tracking-widest flex items-center gap-2">
+                             <Shield size={14}/> Face Matching Intelligence (ID ↔ Selfie)
+                          </div>
+                          <Badge className={
+                              docs.faceMatching.status === "MATCHED" ? "bg-green-600 text-white" :
+                              docs.faceMatching.status === "REVIEW_REQUIRED" ? "bg-yellow-600 text-white" :
+                              "bg-red-600 text-white"
+                          }>
+                              {docs.faceMatching.status.replace("_", " ")}
+                          </Badge>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-6 items-center">
+                          <div className="col-span-2 space-y-4">
+                              <div>
+                                  <div className="text-[10px] text-slate-400 uppercase font-bold mb-1">Match Confidence Score</div>
+                                  <div className="flex items-center gap-4">
+                                       <div className="flex-1 h-3 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
+                                           <div className={`h-full transition-all duration-1000 ${
+                                               docs.faceMatching.score >= 90 ? "bg-green-500" :
+                                               docs.faceMatching.score >= 70 ? "bg-yellow-500" :
+                                               "bg-red-500"
+                                           }`} style={{ width: `${docs.faceMatching.score}%` }}></div>
+                                       </div>
+                                       <span className={`text-2xl font-black ${
+                                               docs.faceMatching.score >= 90 ? "text-green-400" :
+                                               docs.faceMatching.score >= 70 ? "text-yellow-400" :
+                                               "text-red-400"
+                                           }`}>{docs.faceMatching.score}%</span>
+                                  </div>
+                              </div>
+
+                              <div className="flex gap-4 text-[10px]">
+                                  <div>
+                                      <span className="text-slate-500 font-bold uppercase">Provider:</span>
+                                      <span className="ml-1 text-slate-300">{docs.faceMatching.provider}</span>
+                                  </div>
+                                  <div>
+                                      <span className="text-slate-500 font-bold uppercase">Checked:</span>
+                                      <span className="ml-1 text-slate-300">{new Date(docs.faceMatching.verifiedAt).toLocaleString()}</span>
+                                  </div>
+                              </div>
+                          </div>
+
+                          <div className="flex items-center justify-center border-l border-slate-800 pl-6">
+                              {docs.faceMatching.status === "MATCHED" ? (
+                                  <div className="text-center">
+                                      <div className="bg-green-500/10 p-3 rounded-full mb-2">
+                                          <CheckCircle className="text-green-500" size={32} />
+                                      </div>
+                                      <div className="text-[10px] font-black text-green-500 uppercase">Identity Verified</div>
+                                  </div>
+                              ) : docs.faceMatching.status === "REVIEW_REQUIRED" ? (
+                                  <div className="text-center">
+                                      <div className="bg-yellow-500/10 p-3 rounded-full mb-2">
+                                          < Shield size={32} className="text-yellow-500" />
+                                      </div>
+                                      <div className="text-[10px] font-black text-yellow-500 uppercase">Manual Review</div>
+                                  </div>
+                              ) : (
+                                  <div className="text-center">
+                                      <div className="bg-red-500/10 p-3 rounded-full mb-2">
+                                          <XCircle className="text-red-500" size={32} />
+                                      </div>
+                                      <div className="text-[10px] font-black text-red-500 uppercase">Mismatch Risk</div>
+                                  </div>
+                              )}
+                          </div>
+                      </div>
+                  </div>
+                )}
 
                 {/* ✅ Show reject reason (if any) */}
                 {selectedProvider && getRejectReason(selectedProvider) ? (
