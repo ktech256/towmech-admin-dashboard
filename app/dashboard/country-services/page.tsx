@@ -87,7 +87,7 @@ const API_BASE =
 
 function authHeaders(extra: Record<string, string> = {}) {
   const token =
-    typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    typeof window !== "undefined" ? (localStorage.getItem("adminToken") || localStorage.getItem("token")) : null;
 
   return {
     "Content-Type": "application/json",
