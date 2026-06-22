@@ -1145,6 +1145,12 @@ export default function ProvidersPage() {
                                       <span className="text-slate-500 font-bold uppercase">Provider:</span>
                                       <span className="ml-1 text-slate-300">{docs.faceMatching.provider}</span>
                                   </div>
+                                  {docs.faceMatching.details?.detectionConfidence && (
+                                      <div>
+                                          <span className="text-slate-500 font-bold uppercase">Confidence:</span>
+                                          <span className="ml-1 text-slate-300">{Math.round(docs.faceMatching.details.detectionConfidence * 100)}%</span>
+                                      </div>
+                                  )}
                                   <div>
                                       <span className="text-slate-500 font-bold uppercase">Checked:</span>
                                       <span className="ml-1 text-slate-300">{new Date(docs.faceMatching.verifiedAt).toLocaleString()}</span>
