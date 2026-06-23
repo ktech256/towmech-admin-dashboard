@@ -57,7 +57,7 @@ type Provider = {
     verificationStatus?: string;
     jobPreference?: string;
     lastFaceCheck?: {
-        status: "NOT_CHECKED" | "MATCHED" | "REVIEW_REQUIRED" | "NO_MATCH";
+        status: "NOT_CHECKED" | "MATCHED" | "MATCHED_WITH_WARNING" | "REVIEW_REQUIRED" | "IDENTITY_MISMATCH";
         score: number;
         verifiedAt: string | null;
         deviceId: string | null;
@@ -154,7 +154,7 @@ type VerificationDocs = {
   faceMatching?: {
     score: number;
     similarityScore?: number;
-    status: "NOT_CHECKED" | "MATCHED" | "REVIEW_REQUIRED" | "NO_MATCH";
+    status: "NOT_CHECKED" | "MATCHED" | "MATCHED_WITH_WARNING" | "REVIEW_REQUIRED" | "IDENTITY_MISMATCH";
     verifiedAt: string;
     provider: string;
     model?: string;
@@ -1212,11 +1212,12 @@ export default function ProvidersPage() {
                                     <div className="text-[9px] text-slate-400 uppercase font-bold mb-1">Current Status</div>
                                     <Badge className={
                                         selectedProvider.providerProfile.lastFaceCheck.status === "MATCHED" ? "bg-green-600 text-white" :
+                                        selectedProvider.providerProfile.lastFaceCheck.status === "MATCHED_WITH_WARNING" ? "bg-blue-600 text-white" :
                                         selectedProvider.providerProfile.lastFaceCheck.status === "REVIEW_REQUIRED" ? "bg-yellow-600 text-white" :
-                                        selectedProvider.providerProfile.lastFaceCheck.status === "NO_MATCH" ? "bg-red-600 text-white" :
+                                        selectedProvider.providerProfile.lastFaceCheck.status === "IDENTITY_MISMATCH" ? "bg-red-600 text-white" :
                                         "bg-slate-600 text-white"
                                     }>
-                                        {selectedProvider.providerProfile.lastFaceCheck.status.replace("_", " ")}
+                                        {selectedProvider.providerProfile.lastFaceCheck.status.replace(/_/g, " ")}
                                     </Badge>
                                 </div>
                                 {selectedProvider.providerProfile.lastFaceCheck.isRequired && (
@@ -1275,10 +1276,12 @@ export default function ProvidersPage() {
                           </div>
                           <Badge className={
                               docs.faceMatching.status === "MATCHED" ? "bg-green-600 text-white" :
+                              docs.faceMatching.status === "MATCHED_WITH_WARNING" ? "bg-blue-600 text-white" :
                               docs.faceMatching.status === "REVIEW_REQUIRED" ? "bg-yellow-600 text-white" :
                               "bg-red-600 text-white"
                           }>
                               {docs.faceMatching.status === "MATCHED" ? "IDENTITY VERIFIED" :
+                               docs.faceMatching.status === "MATCHED_WITH_WARNING" ? "MATCHED (WARNING)" :
                                docs.faceMatching.status === "REVIEW_REQUIRED" ? "MANUAL REVIEW" : "IDENTITY MISMATCH"}
                           </Badge>
                       </div>
@@ -1290,14 +1293,16 @@ export default function ProvidersPage() {
                                   <div className="flex items-center gap-4">
                                        <div className="flex-1 h-3 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
                                            <div className={`h-full transition-all duration-1000 ${
-                                               (docs.faceMatching.similarityScore || docs.faceMatching.score) >= 95 ? "bg-green-500" :
-                                               (docs.faceMatching.similarityScore || docs.faceMatching.score) >= 80 ? "bg-yellow-500" :
+                                               (docs.faceMatching.similarityScore || docs.faceMatching.score) >= 90 ? "bg-green-500" :
+                                               (docs.faceMatching.similarityScore || docs.faceMatching.score) >= 75 ? "bg-blue-500" :
+                                               (docs.faceMatching.similarityScore || docs.faceMatching.score) >= 60 ? "bg-yellow-500" :
                                                "bg-red-500"
                                            }`} style={{ width: `${docs.faceMatching.similarityScore || docs.faceMatching.score}%` }}></div>
                                        </div>
                                        <span className={`text-2xl font-black ${
-                                               (docs.faceMatching.similarityScore || docs.faceMatching.score) >= 95 ? "text-green-400" :
-                                               (docs.faceMatching.similarityScore || docs.faceMatching.score) >= 80 ? "text-yellow-400" :
+                                               (docs.faceMatching.similarityScore || docs.faceMatching.score) >= 90 ? "text-green-400" :
+                                               (docs.faceMatching.similarityScore || docs.faceMatching.score) >= 75 ? "text-blue-400" :
+                                               (docs.faceMatching.similarityScore || docs.faceMatching.score) >= 60 ? "text-yellow-400" :
                                                "text-red-400"
                                            }`}>{docs.faceMatching.similarityScore || docs.faceMatching.score}%</span>
                                   </div>
